@@ -1,0 +1,128 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-canvas font-sans text-base text-ink antialiased;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Dense register: numeric data aligns in columns. */
+  th,
+  td,
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Browser surfaces ship with the palette (selection, caret, focus). */
+  ::selection {
+    background-color: #DFE3FE;
+    color: #172033;
+  }
+
+  input,
+  textarea {
+    caret-color: #5865F2;
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #D5DAE3 transparent;
+  }
+
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background: #D5DAE3;
+    border: 2px solid transparent;
+    border-radius: 8px;
+    background-clip: content-box;
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background: #B9C0CC;
+    background-clip: content-box;
+  }
+}
+
+@layer components {
+  /* HRIS_PORTAL field convention. */
+  .field {
+    @apply h-9 w-full rounded-md border border-line bg-surface px-3 text-sm text-ink
+      placeholder:text-ink-muted transition-[border-color,box-shadow] duration-fast ease-standard
+      focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20;
+  }
+
+  /* Compact field variant sized for dense table rows. */
+  .field-compact {
+    @apply h-7 rounded-sm px-2 text-xs;
+  }
+
+  .btn {
+    @apply inline-flex h-9 select-none items-center justify-center gap-1.5 rounded-md px-3 text-sm
+      font-semibold transition-[background-color,color,box-shadow,transform] duration-fast ease-standard
+      focus-visible:outline-none focus-visible:shadow-focus
+      disabled:pointer-events-none disabled:opacity-50;
+  }
+
+  .card {
+    @apply rounded-xl border border-line bg-surface shadow-xs;
+  }
+
+  .btn-primary {
+    @apply btn bg-brand text-white hover:bg-brand-hover active:translate-y-[0.5px];
+  }
+
+  .btn-secondary {
+    @apply btn border border-line bg-surface text-ink hover:bg-surface-subtle active:translate-y-[0.5px];
+  }
+
+  .btn-ghost {
+    @apply btn text-ink-secondary hover:bg-surface-sunken hover:text-ink;
+  }
+
+  /* Icon-only button: consistent 32px hit target, gentle hover wash. */
+  .icon-btn {
+    @apply inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-ink-secondary
+      transition-colors duration-fast ease-standard hover:bg-surface-sunken hover:text-ink
+      focus-visible:outline-none focus-visible:shadow-focus
+      disabled:pointer-events-none disabled:opacity-50;
+  }
+
+  .skeleton {
+    @apply rounded-sm bg-surface-sunken animate-shimmer;
+    background-image: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.7), transparent);
+    background-size: 400px 100%;
+    background-repeat: no-repeat;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
