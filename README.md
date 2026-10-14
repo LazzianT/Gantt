@@ -8,6 +8,7 @@
 
 Plan → schedule → execute → prove → approve → report.
 
+[![CI](https://github.com/LazzianT/Gantt/actions/workflows/ci.yml/badge.svg)](https://github.com/LazzianT/Gantt/actions/workflows/ci.yml)
 [![React](https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![Vite](https://img.shields.io/badge/Vite-6-646CFF?style=flat-square&logo=vite&logoColor=white)](https://vitejs.dev)
@@ -124,7 +125,7 @@ Key decisions:
 
 **Database** — SQL Server, schema `pm`, 17 idempotent migrations
 
-**Quality** — 218 passing tests, typecheck and production build wired into the root scripts
+**Quality** — 218 passing tests, CI running typecheck, tests, and production build on every push and pull request
 
 ## Quick start
 
@@ -236,7 +237,11 @@ See [STATUS.md](docs/STATUS.md) for the full ledger, including known issues.
 
 ## Contributing
 
-Issues and pull requests are welcome. Please include what changed, why, and how you verified it — `npm run typecheck && npm test` should pass before opening a PR.
+Issues and pull requests are welcome. Please include what changed, why, and how you verified it — `npm run typecheck && npm test` should pass before opening a PR. CI runs the same checks plus a production build on every push and pull request.
+
+## License
+
+Released under the [MIT License](LICENSE). Use it, fork it, learn from it.
 
 ---
 

@@ -57,13 +57,11 @@ Auth: NIP + Tanggal Lahir validated against read-only HRIS via `EmployeeProvider
 ## Known issues / tech debt
 
 - No DB integration tests — unit tests use fakes / fake-exec only.
-- No transaction wrapper around multi-write flows.
 - `dependencies`, `milestones`, `progress`, `activity` return raw `snake_case` rows —
   latent DTO drift.
 - Gantt time axis assumes the default Mon–Fri calendar; no calendar endpoint yet.
 - Reports tab provides schedule variance, delay analysis, evidence/approval audit, and
   browser print/PDF; it has no persisted report definition or scheduled export yet.
-- No CI workflow; typecheck and tests are run locally.
 - Doc-vs-schema naming drift partially unresolved.
 
 ## Architecture decisions
@@ -82,6 +80,5 @@ Auth: NIP + Tanggal Lahir validated against read-only HRIS via `EmployeeProvider
 1. Calendar endpoint + Gantt axis binding.
 2. Transaction wrapper + DTO normalization for remaining raw endpoints.
 3. Integration / e2e tests against a real SQL Server.
-4. CI workflow running typecheck, tests, and build.
-5. Portfolio create-project UI.
-6. Directory view (HRIS-backed people browse).
+4. Portfolio create-project UI.
+5. Directory view (HRIS-backed people browse).
