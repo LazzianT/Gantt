@@ -1,9 +1,12 @@
 import { ConflictError, NotFoundError, ValidationError } from "../../middleware/error.js";
+import { writeActivity } from "../activity/activity.repository.js";
 import {
   TASK_PRIORITIES,
   TASK_STATUSES,
   TASK_TYPES,
+  type ActualFinishStatus,
   type CreateTaskData,
+  type FinishReviewRow,
   type TaskPriority,
   type TaskRepository,
   type TaskRow,
@@ -14,6 +17,9 @@ import {
 
 export type CreateTaskInput = CreateTaskData;
 export type UpdateTaskInput = UpdateTaskPatch;
+
+/** Route schemas validate format; the service re-checks because it is also called from tests and scripts. */
+const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 export interface TaskDTO {
   id: number;
@@ -42,6 +48,10 @@ export interface TaskDTO {
   totalFloatDays: number | null;
   freeFloatDays: number | null;
   isCritical: boolean;
+  actualStart: string | null;
+  actualFinish: string | null;
+  actualFinishStatus: ActualFinishStatus | null;
+  actualFinishComment: string | null;
   scheduleVersion: number;
   createdAt: string;
   updatedAt: string;
@@ -107,6 +117,10 @@ export function toTaskDTO(row: TaskRow): TaskDTO {
     totalFloatDays: numOrNull(row.total_float_days),
     freeFloatDays: numOrNull(row.free_float_days),
     isCritical: Boolean(row.is_critical),
+    actualStart: isoDate(row.actual_start),
+    actualFinish: isoDate(row.actual_finish),
+    actualFinishStatus: row.actual_finish_status ?? null,
+    actualFinishComment: row.actual_finish_comment ?? null,
     scheduleVersion: num(row.schedule_version),
     createdAt: isoStamp(row.created_at),
     updatedAt: isoStamp(row.updated_at),
@@ -144,19 +158,34 @@ export function assertNotSummary(task: Pick<TaskRow, "task_type">): void {
   }
 }
 
-/** A child task's dates must stay within its parent's date range whenever both sides are known. */
-function assertWithinParent(
-  child: { startDate: string | null; finishDate: string | null; parentId: number | null },
-  parent: TaskRow | null,
-): void {
-  if (child.parentId == null || !parent) return;
-  const parentStart = isoDate(parent.start_date);
-  const parentFinish = isoDate(parent.finish_date);
-  if (child.startDate && parentStart && child.startDate < parentStart) {
-    throw new ValidationError("Task start date cannot be before its parent's start date");
-  }
-  if (child.finishDate && parentFinish && child.finishDate > parentFinish) {
-    throw new ValidationError("Task finish date cannot be after its parent's finish date");
+/**
+ * Container tasks derive their timeframe from their subtasks, so a child may legitimately sit
+ * outside the parent's current range. Rather than rejecting the move, widen every ancestor so it
+ * still encloses the child. Ancestors only ever grow (never shrink) and each step is guarded by a
+ * visited set so malformed cycles cannot loop forever.
+ */
+async function growAncestors(
+  repo: TaskRepository,
+  parentId: number | null,
+  childStart: string | null,
+  childFinish: string | null,
+): Promise<void> {
+  if (parentId == null || (childStart == null && childFinish == null)) return;
+  const visited = new Set<number>();
+  let cursorId: number | null = parentId;
+  while (cursorId != null && !visited.has(cursorId)) {
+    visited.add(cursorId);
+    const ancestor = await repo.getById(cursorId);
+    if (!ancestor) return;
+    const patch: UpdateTaskPatch = {};
+    const start = isoDate(ancestor.start_date);
+    const finish = isoDate(ancestor.finish_date);
+    if (childStart && (start == null || childStart < start)) patch.start_date = childStart;
+    if (childFinish && (finish == null || childFinish > finish)) patch.finish_date = childFinish;
+    if (patch.start_date !== undefined || patch.finish_date !== undefined) {
+      await repo.update(cursorId, patch);
+    }
+    cursorId = ancestor.parent_task_id;
   }
 }
 
@@ -195,17 +224,9 @@ export async function createTask(repo: TaskRepository, input: CreateTaskInput): 
     is_milestone: taskType === "Milestone" ? true : (input.is_milestone ?? false),
     duration_days: taskType === "Milestone" ? 0 : (input.duration_days ?? null),
   };
-  const parent = data.parent_task_id != null ? await repo.getById(data.parent_task_id) : null;
-  assertWithinParent(
-    {
-      startDate: data.start_date ?? null,
-      finishDate: data.finish_date ?? null,
-      parentId: data.parent_task_id ?? null,
-    },
-    parent,
-  );
   const row = await repo.create(data);
   if (!row) throw new NotFoundError("Task not found after create");
+  await growAncestors(repo, data.parent_task_id ?? null, data.start_date ?? null, data.finish_date ?? null);
   return toTaskDTO(row);
 }
 
@@ -226,17 +247,11 @@ export async function updateTask(repo: TaskRepository, id: number, patch: Update
     next.duration_days = 0;
   }
   const parentId = next.parent_task_id !== undefined ? next.parent_task_id : current.parent_task_id;
-  const parent = parentId != null ? await repo.getById(parentId) : null;
-  assertWithinParent(
-    {
-      startDate: next.start_date !== undefined ? next.start_date : isoDate(current.start_date),
-      finishDate: next.finish_date !== undefined ? next.finish_date : isoDate(current.finish_date),
-      parentId,
-    },
-    parent,
-  );
   const row = await repo.update(id, next);
   if (!row) throw new NotFoundError("Task not found");
+  const newStart = next.start_date !== undefined ? next.start_date : isoDate(current.start_date);
+  const newFinish = next.finish_date !== undefined ? next.finish_date : isoDate(current.finish_date);
+  await growAncestors(repo, parentId, newStart, newFinish);
   return toTaskDTO(row);
 }
 
@@ -271,4 +286,123 @@ export async function move(
   }
 
   await repo.setParent(id, newParentId ?? null, newOrder);
+}
+
+/**
+ * "My Tasks" completion toggle. Completing requires the as-built finish date the PIC reports and
+ * parks it as `Pending` for a manager to review; reopening discards it and returns the task to
+ * In Progress at 0 progress. Deliberately narrower than `updateTask` — a PIC may only say whether
+ * their own task is done and when, not reshape it.
+ */
+export async function setMyTaskCompletion(
+  repo: TaskRepository,
+  id: number,
+  input: { completed: boolean; actual_finish?: string | null },
+  employeeNip: string,
+): Promise<TaskDTO> {
+  const current = await repo.getById(id);
+  if (!current) throw new NotFoundError("Task not found");
+
+  const actualFinish = input.actual_finish ?? null;
+  if (input.completed && !actualFinish) {
+    throw new ValidationError("actual_finish is required when marking a task as done");
+  }
+  if (actualFinish && !DATE_PATTERN.test(actualFinish)) {
+    throw new ValidationError("actual_finish must be an ISO date (YYYY-MM-DD)");
+  }
+
+  const row = await repo.setCompletion(id, input.completed, actualFinish, employeeNip);
+  if (!row) throw new NotFoundError("Task not found");
+
+  await writeActivity(repo.exec, {
+    project_id: row.project_id,
+    entity_type: "task",
+    entity_id: id,
+    action: input.completed ? "complete" : "reopen",
+    actor_nip: employeeNip,
+    detail: {
+      status: row.status,
+      progress_percent: Number(row.progress_percent),
+      actual_finish: isoDate(row.actual_finish),
+      actual_finish_status: row.actual_finish_status ?? null,
+    },
+  });
+  return toTaskDTO(row);
+}
+
+/**
+ * Manager decision on a submitted as-built finish date. Only `Pending` rows can be decided, so a
+ * resubmission cannot be reviewed twice.
+ */
+export async function reviewActualFinish(
+  repo: TaskRepository,
+  id: number,
+  decision: "Approved" | "Rejected",
+  reviewerNip: string,
+  comment: string | null,
+): Promise<TaskDTO> {
+  const current = await repo.getById(id);
+  if (!current) throw new NotFoundError("Task not found");
+  if (current.actual_finish_status !== "Pending") {
+    throw new ConflictError("This finish date has already been reviewed");
+  }
+  const trimmed = comment?.trim();
+  if (decision === "Rejected" && !trimmed) {
+    throw new ValidationError("A rejection needs a reason");
+  }
+  if (trimmed && trimmed.length > 500) throw new ValidationError("comment must be at most 500 characters");
+
+  const row = await repo.reviewActualFinish(id, decision, reviewerNip, trimmed || null);
+  if (!row) throw new NotFoundError("Task not found");
+
+  await writeActivity(repo.exec, {
+    project_id: row.project_id,
+    entity_type: "task",
+    entity_id: id,
+    action: decision === "Approved" ? "approve_actual_finish" : "reject_actual_finish",
+    actor_nip: reviewerNip,
+    detail: {
+      actual_finish: isoDate(current.actual_finish),
+      decision,
+      comment: trimmed || null,
+      status: row.status,
+    },
+  });
+  return toTaskDTO(row);
+}
+
+export interface FinishReviewDTO {
+  task_id: number;
+  name: string;
+  pic_nip: string | null;
+  pic_name: string | null;
+  planned_finish: string | null;
+  actual_finish: string | null;
+  actual_finish_status: ActualFinishStatus;
+  actual_finish_submitted_by: string | null;
+  actual_finish_submitted_at: string | null;
+  actual_finish_comment: string | null;
+}
+
+function toFinishReviewDTO(row: FinishReviewRow): FinishReviewDTO {
+  return {
+    task_id: row.task_id,
+    name: row.name,
+    pic_nip: row.pic_nip,
+    pic_name: row.pic_name,
+    planned_finish: isoDate(row.planned_finish),
+    actual_finish: isoDate(row.actual_finish),
+    actual_finish_status: row.actual_finish_status,
+    actual_finish_submitted_by: row.actual_finish_submitted_by,
+    actual_finish_submitted_at: isoStamp(row.actual_finish_submitted_at),
+    actual_finish_comment: row.actual_finish_comment,
+  };
+}
+
+export async function listFinishReviews(
+  repo: TaskRepository,
+  projectId: number,
+  status?: ActualFinishStatus | null,
+): Promise<FinishReviewDTO[]> {
+  return (await repo.listFinishReviews(projectId, status ?? null)).map(toFinishReviewDTO);
 }

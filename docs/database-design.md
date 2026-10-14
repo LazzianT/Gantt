@@ -1,6 +1,6 @@
 # Database Design: `pm` schema
 
-Database `CORP_DB`, dedicated schema `pm`. HRIS tables (`dbo.hris_worker`) are never modified and never referenced by a foreign key. Employee identity is stored as `employee_nip NVARCHAR(...)` with copy-on-write display snapshots.
+Database `DB_DATABASE` (`.env`; `CORP_DB` by default), dedicated schema `pm`. HRIS tables (`dbo.hris_Employee`) are never modified and never referenced by a foreign key. Employee identity is stored as `employee_nip NVARCHAR(...)` with copy-on-write display snapshots.
 
 ## 1. Conventions
 
@@ -9,7 +9,7 @@ Database `CORP_DB`, dedicated schema `pm`. HRIS tables (`dbo.hris_worker`) are n
 - Dates that are calendar days (not instants): `DATE`.
 - Strings: `NVARCHAR`. Business codes: `VARCHAR`.
 - Soft delete via `is_active BIT` where history matters. No hard delete of tasks with logs.
-- Every table in `pm`. No cross-database FK. No FK to `hris_worker`.
+- Every table in `pm`. No cross-database FK. No FK to `hris_Employee`.
 - Index foreign keys and frequent filters (`project_id`, `calendar_id`, `baseline_id`, `report_date`).
 
 ## 2. Entity relationship diagram (ASCII)
@@ -306,7 +306,7 @@ Constraints: `CHECK (action IN ('create','update','delete','schedule'))`. Index 
 
 ### 3.15 `pm.app_users` — reserved / unused
 
-Not used by the current login. Authentication is **NIP + date of birth validated against the read-only HRIS directory** (`CORP_DB.dbo.hris_worker`) via `EmployeeProvider`; no password is checked. This table and its email/password path are retained for a possible future local-identity option. See `authentication.md`.
+Not used by the current login. Authentication is **NIP + date of birth validated against the read-only HRIS directory** (`dbo.hris_Employee`, database `DB_DATABASE` from `.env`) via `EmployeeProvider`; no password is checked. This table and its email/password path are retained for a possible future local-identity option. See `authentication.md`.
 
 | Column | Type | Null | Key | Notes |
 |--------|------|------|-----|-------|
@@ -338,8 +338,12 @@ Constraints: `CHECK (role IN ('admin','manager','member','viewer'))`.
 | `011_activity_logs.sql` | `project_activity_logs` |
 | `012_indexes.sql` | secondary indexes |
 | `013_seed_default_calendar.sql` | default calendar seed (working week + `hours_per_day`) |
+| `014_project_task_pic.sql` | `project_tasks.pic_nip` / `pic_name` |
+| `015_task_evidence.sql` | `task_evidence` (note and/or file per task) |
+| `016_task_actual_dates.sql` | `project_tasks.actual_start` / `actual_finish` (as-built) |
+| `017_actual_finish_approval.sql` | manager review columns + index on `project_tasks` |
 
-Idempotent style: `IF OBJECT_ID('pm.x','U') IS NULL BEGIN ... END`. Forward-only. No destructive `DROP` in migrations.
+Idempotent style: `IF OBJECT_ID('pm.x','U') IS NULL BEGIN ... END` (later files use `IF COL_LENGTH(...) IS NULL` for `ALTER TABLE`). Forward-only. No destructive `DROP` in migrations.
 
 ## 5. Data integrity rules
 

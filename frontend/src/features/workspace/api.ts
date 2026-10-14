@@ -169,3 +169,15 @@ export function createBaseline(projectId: number, name: string): Promise<Baselin
 export function getVariance(baselineId: number): Promise<VarianceRow[]> {
   return api<VarianceRow[]>(`/baselines/${baselineId}/variance`);
 }
+
+export interface ProjectReports {
+  project: { project_id: number; code: string; name: string; status: string; health: string };
+  summary: { tasks: number; completed: number; open: number; overdue: number; critical: number; variance_days: number | null };
+  variance: Array<{ task_id: number; name: string; baseline_finish: string | null; current_finish: string | null; variance_days: number | null; slip: boolean }>;
+  delays: Array<{ task_id: number; name: string; pic_nip: string | null; finish_date: string | null; actual_finish: string | null; status: string; progress_percent: number; is_critical: boolean; days_overdue: number }>;
+  audit: Array<{ kind: 'activity' | 'evidence' | 'approval'; id: number; task_id: number | null; task_name: string | null; actor_nip: string | null; action: string; detail: string | null; created_at: string }>;
+}
+
+export function getProjectReports(projectId: number): Promise<ProjectReports> {
+  return api<ProjectReports>(`/projects/${projectId}/reports`);
+}

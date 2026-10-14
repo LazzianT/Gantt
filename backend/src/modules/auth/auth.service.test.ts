@@ -143,6 +143,7 @@ describe("auth.service.resolveRole", () => {
   it("derives roles from the HRIS job level text", () => {
     expect(resolveRole("x", "MANAGER")).toBe("manager");
     expect(resolveRole("x", "DIRECTOR")).toBe("admin");
+    expect(resolveRole("x", "DIREKTUR")).toBe("admin");
     expect(resolveRole("x", "HEAD OF OPS")).toBe("manager");
     expect(resolveRole("x", "BOARD MEMBER")).toBe("admin");
     expect(resolveRole("x", "STAFF")).toBe("member");

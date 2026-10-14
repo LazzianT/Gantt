@@ -7,6 +7,7 @@ import {
   codeExists,
   codesWithPrefix as repoCodesWithPrefix,
   createProject as repoCreateProject,
+  ensureMember as repoEnsureMember,
   findMember as repoFindMember,
   getProject as repoGetProject,
   listMemberProjects as repoListMemberProjects,
@@ -158,6 +159,17 @@ export async function listMemberProjects(exec: Exec, nip: string): Promise<Proje
 export async function getMember(exec: Exec, projectId: number, nip: string): Promise<MemberDTO | null> {
   const row = await repoFindMember(exec, projectId, nip);
   return row ? toMemberDTO(row) : null;
+}
+
+/** Auto-provisions a Team member from a task PIC. Add-only: reuses an existing
+ *  (project_id, employee_nip) row and never overwrites role or allocation. */
+export async function ensureMember(exec: Exec, projectId: number, nip: string, name: string): Promise<boolean> {
+  const employeeNip = nip.trim();
+  if (!employeeNip) return false;
+  return repoEnsureMember(exec, projectId, {
+    employee_nip: employeeNip,
+    employee_name: name.trim() || employeeNip,
+  });
 }
 
 function validateEnums(input: CreateProjectInput | UpdateProjectInput): void {

@@ -1,10 +1,11 @@
 import { Router } from "express";
 import { z } from "zod";
 import { query } from "../../db/pool.js";
-import { requireAuth } from "../../middleware/auth.js";
-import { guardProject, projectFromParam, projectOfTask } from "../../middleware/project-membership.js";
+import { requireAuth, requireRole } from "../../middleware/auth.js";
+import { guardProject, projectFromParam, projectOfTask, requireTaskPic } from "../../middleware/project-membership.js";
 import { ValidationError } from "../../middleware/error.js";
 import { getProject } from "../projects/projects.repository.js";
+import { ensureMember } from "../projects/projects.service.js";
 import { workingDaysBetween } from "../scheduling/calendar.js";
 import { loadCalendar } from "../scheduling/calendar.repository.js";
 import {
@@ -12,9 +13,22 @@ import {
   TASK_STATUSES,
   TASK_TYPES,
   createTaskRepository,
+  type ActualFinishStatus,
   type Exec,
 } from "./tasks.repository.js";
-import { createTask, getTask, listTasks, move, softDeleteTask, updateTask } from "./tasks.service.js";
+import {
+  createTask,
+  getTask,
+  listFinishReviews,
+  listTasks,
+  move,
+  reviewActualFinish,
+  setMyTaskCompletion,
+  softDeleteTask,
+  updateTask,
+} from "./tasks.service.js";
+
+const ACTUAL_FINISH_STATUSES = ["Pending", "Approved", "Rejected"] as const;
 
 const dateString = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD");
 
@@ -44,11 +58,23 @@ const moveSchema = z.object({
   sort_order: z.number().int().optional(),
 });
 
+const completionSchema = z.object({
+  completed: z.boolean(),
+  actual_finish: dateString.nullish(),
+});
+
+const reviewSchema = z.object({
+  decision: z.enum(["Approved", "Rejected"]),
+  comment: z.string().max(500).nullish(),
+});
+
 const exec: Exec = (sql, params) => query(sql, params);
 const repo = createTaskRepository(exec);
 
 const guardProjectTasks = guardProject({ exec }, projectFromParam("projectId"));
 const guardTask = guardProject({ exec }, projectOfTask);
+/** "My Tasks" writes are PIC-only: membership alone is not enough to close someone else's work. */
+const guardTaskPic = requireTaskPic({ exec, bypassRoles: ["admin", "manager"] });
 
 function idParam(value: string, name = "id"): number {
   const n = Number(value);
@@ -74,6 +100,11 @@ async function durationFromDates(calendarId: number | null, start: string, finis
   return workingDaysBetween(calendar, toUtcDate(start), toUtcDate(finish));
 }
 
+/** Auto-adds a task's PIC to the project Team (pm.project_members). Add-only and idempotent. */
+async function syncPicToTeam(task: { projectId: number; picNip: string | null; picName: string | null }): Promise<void> {
+  if (task.picNip) await ensureMember(exec, task.projectId, task.picNip, task.picName ?? "");
+}
+
 export const tasksRouter = Router();
 tasksRouter.use(requireAuth);
 
@@ -93,7 +124,9 @@ tasksRouter.post("/projects/:projectId/tasks", guardProjectTasks, async (req, re
       const project = await getProject(exec, projectId);
       input.duration_days = await durationFromDates(project?.calendar_id ?? null, input.start_date, input.finish_date);
     }
-    res.status(201).json({ data: await createTask(repo, input) });
+    const created = await createTask(repo, input);
+    await syncPicToTeam(created);
+    res.status(201).json({ data: created });
   } catch (err) {
     next(err);
   }
@@ -124,7 +157,9 @@ tasksRouter.patch("/tasks/:id", guardTask, async (req, res, next) => {
         );
       }
     }
-    res.json({ data: await updateTask(repo, id, patch) });
+    const updated = await updateTask(repo, id, patch);
+    await syncPicToTeam(updated);
+    res.json({ data: updated });
   } catch (err) {
     next(err);
   }
@@ -149,3 +184,48 @@ tasksRouter.post("/tasks/:id/move", guardTask, async (req, res, next) => {
     next(err);
   }
 });
+
+/**
+ * "My Tasks" write action: the PIC marks their own task done and reports the date it actually
+ * finished, or reopens it. The date is recorded as `Pending` until a manager reviews it.
+ */
+tasksRouter.patch("/tasks/:id/completion", guardTaskPic, async (req, res, next) => {
+  try {
+    const nip = req.user?.sub;
+    if (typeof nip !== "string") throw new ValidationError("Missing user identity");
+    const body = parse(completionSchema, req.body);
+    res.json({ data: await setMyTaskCompletion(repo, idParam(req.params.id), body, nip) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** Manager decision on a submitted as-built finish date. */
+tasksRouter.post("/tasks/:id/actual-finish/review", requireRole("admin", "manager"), guardTask, async (req, res, next) => {
+  try {
+    const nip = req.user?.sub;
+    if (typeof nip !== "string") throw new ValidationError("Missing user identity");
+    const { decision, comment } = parse(reviewSchema, req.body);
+    res.json({ data: await reviewActualFinish(repo, idParam(req.params.id), decision, nip, comment ?? null) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** Queue of submitted as-built finish dates for the project's manager queue. */
+tasksRouter.get(
+  "/projects/:projectId/actual-finish-reviews",
+  guardProjectTasks,
+  requireRole("admin", "manager"),
+  async (req, res, next) => {
+    try {
+      const raw = req.query.status;
+      const status = typeof raw === "string" && (ACTUAL_FINISH_STATUSES as readonly string[]).includes(raw)
+        ? (raw as ActualFinishStatus)
+        : null;
+      res.json({ data: await listFinishReviews(repo, Number(req.params.projectId), status) });
+    } catch (err) {
+      next(err);
+    }
+  },
+);

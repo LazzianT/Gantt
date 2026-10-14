@@ -5,6 +5,8 @@ import LoginPage from '../features/auth/LoginPage';
 import DashboardPage from '../features/dashboard/DashboardPage';
 import PortfolioPage from '../features/portfolio/PortfolioPage';
 import WorkspacePage from '../features/workspace/WorkspacePage';
+import ReportsIndexPage from '../features/workspace/ReportsIndexPage';
+import MyTasksPage from '../features/tasks/MyTasksPage';
 
 export function RequireAuth() {
   return isAuthenticated() ? <Outlet /> : <Navigate to="/login" replace />;
@@ -27,6 +29,8 @@ export const router = createBrowserRouter([
         children: [
           { index: true, element: <DashboardPage /> },
           { path: 'portfolio', element: <PortfolioPage /> },
+          { path: 'my-tasks', element: <MyTasksPage /> },
+          { path: 'reports', element: <ReportsIndexPage /> },
           { path: 'projects/:id', element: <WorkspacePage /> },
         ],
       },

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { HRIS_SQL, HrisEmployeeAdapter, SEARCH_MAX_LIMIT, type QueryFn } from "./hris-adapter.js";
+import { env } from "../../config/env.js";
+import { HRIS_SQL, HrisEmployeeAdapter, SEARCH_MAX_LIMIT, hrisObject, type QueryFn } from "./hris-adapter.js";
 import { mapRowToDTO } from "./provider.js";
 
 interface Call {
@@ -119,7 +120,7 @@ describe("HrisEmployeeAdapter.searchEmployees", () => {
     await adapter.searchEmployees("ja", 5);
     const { sql, params } = calls[0]!;
     expect(sql).toMatch(/is_Active\s*=\s*'1'/);
-    expect(sql).toContain("hris_cost_center");
+    expect(sql).toContain("MASCOSTCENTER");
     expect(sql).toContain("TOP (@limit)");
     expect(params.like).toBe("%ja%");
     expect(params.limit).toBe(5);
@@ -200,5 +201,15 @@ describe("HRIS SQL safety", () => {
     expect(HRIS_SQL.byNip).toContain("jt.Joblevel");
     expect(HRIS_SQL.active).toContain("CONVERT(varchar(10), a.WorkingDate, 23)");
     expect(HRIS_SQL.all).toContain("CONVERT(varchar(10), a.WorkingDate, 23)");
+  });
+
+  it("qualifies every HRIS object with DB_DATABASE from env, never a hardcoded database", () => {
+    const prefix = `[${env.db.database}].dbo.`;
+    expect(hrisObject("hris_Employee")).toBe(`${prefix}hris_Employee`);
+    for (const sql of Object.values(HRIS_SQL)) {
+      expect(sql).toContain(prefix);
+      expect(sql).not.toMatch(/CORP_DB/i);
+      expect(sql).not.toMatch(/hris_worker|hris_cost_center|hris_job_title/i);
+    }
   });
 });

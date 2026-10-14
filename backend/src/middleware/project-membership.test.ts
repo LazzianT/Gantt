@@ -8,6 +8,7 @@ import {
   projectFromParam,
   projectOfTask,
   requireSelfOrRole,
+  requireTaskPic,
   type Role,
 } from "./project-membership.js";
 import type { Exec } from "../modules/projects/projects.repository.js";
@@ -16,12 +17,18 @@ const KNOWN_PROJECT = 10;
 const MEMBER_NIP = "111";
 const OTHER_NIP = "222";
 
+const PIC_TASK = 7;
+const PIC_NIP = MEMBER_NIP;
+
 const exec: Exec = async (sql, params) => {
+  if (sql.includes("SELECT pic_nip")) {
+    return Number(params?.id) === PIC_TASK ? [{ pic_nip: PIC_NIP }] : [];
+  }
   if (sql.includes("FROM pm.projects")) {
     return Number(params?.id) === KNOWN_PROJECT ? [{ project_id: KNOWN_PROJECT }] : [];
   }
   if (sql.includes("FROM pm.project_tasks")) {
-    return Number(params?.id) === 7 ? [{ project_id: KNOWN_PROJECT }] : [];
+    return Number(params?.id) === PIC_TASK ? [{ project_id: KNOWN_PROJECT }] : [];
   }
   if (sql.includes("FROM pm.project_members")) {
     return String(params?.nip) === MEMBER_NIP ? [{ member: 1 }] : [];
@@ -109,10 +116,65 @@ describe("guardProject", () => {
   });
 
   it("resolves the project from a nested task id", async () => {
-    const mine = await get("/tasks/7", { "x-role": "member", "x-sub": MEMBER_NIP });
+    const mine = await get(`/tasks/${PIC_TASK}`, { "x-role": "member", "x-sub": MEMBER_NIP });
     expect(mine.status).toBe(200);
-    const theirs = await get("/tasks/7", { "x-role": "member", "x-sub": OTHER_NIP });
+    const theirs = await get(`/tasks/${PIC_TASK}`, { "x-role": "member", "x-sub": OTHER_NIP });
     expect(theirs.status).toBe(403);
+  });
+});
+
+describe("requireTaskPic", () => {
+  const guard = requireTaskPic({ exec, bypassRoles: ["admin", "manager"] });
+
+  const app = express();
+  app.get("/pic/:id", (req, _res, next) => {
+    const sub = req.headers["x-sub"];
+    if (typeof sub === "string") req.user = { sub, role: (req.headers["x-role"] as Role) ?? "member" };
+    next();
+  }, guard, (_req, res) => res.json({ data: { ok: true } }));
+  app.use(errorHandler);
+
+  let picBase: string;
+  let picServer: Server;
+
+  beforeAll(async () => {
+    await new Promise<void>((resolve) => {
+      picServer = app.listen(0, resolve);
+    });
+    picBase = `http://127.0.0.1:${(picServer.address() as AddressInfo).port}`;
+  });
+
+  afterAll(() => new Promise<void>((resolve) => picServer.close(() => resolve())));
+
+  const picGet = (path: string, headers: Record<string, string>) =>
+    fetch(`${picBase}${path}`, { headers });
+
+  it("lets the PIC through", async () => {
+    const res = await picGet(`/pic/${PIC_TASK}`, { "x-sub": PIC_NIP, "x-role": "member" });
+    expect(res.status).toBe(200);
+  });
+
+  it("rejects a project member who is not the PIC", async () => {
+    const res = await picGet(`/pic/${PIC_TASK}`, { "x-sub": OTHER_NIP, "x-role": "member" });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({
+      error: { code: "FORBIDDEN", message: "Only the task PIC can update this task" },
+    });
+  });
+
+  it("lets an admin through for supervision", async () => {
+    const res = await picGet(`/pic/${PIC_TASK}`, { "x-sub": OTHER_NIP, "x-role": "admin" });
+    expect(res.status).toBe(200);
+  });
+
+  it("returns 404 when the task does not exist", async () => {
+    const res = await picGet("/pic/999", { "x-sub": PIC_NIP, "x-role": "member" });
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 401 without a token identity", async () => {
+    const res = await picGet(`/pic/${PIC_TASK}`, {});
+    expect(res.status).toBe(401);
   });
 });
 

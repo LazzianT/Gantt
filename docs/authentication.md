@@ -15,7 +15,7 @@ Client  ──POST /auth/login {nip, birthDate}──▶  API
                                     EmployeeProvider.getEmployee(nip)
                                                  │
                                                  ▼
-                                    CORP_DB.dbo.hris_worker  (READ ONLY)
+                                    <DB>.dbo.hris_Employee  (READ ONLY)
                                                  │
                         active?  &  BirthDate (date-only) === birthDate?
                                          │                │
@@ -26,7 +26,7 @@ Client  ──POST /auth/login {nip, birthDate}──▶  API
 
 1. Client sends `POST /auth/login` with `{ nip, birthDate }` (`birthDate` = `YYYY-MM-DD`).
 2. API normalizes the date to date-only and calls `EmployeeProvider.getEmployee(nip)`.
-3. Adapter runs the HRIS `byNip` SELECT against `CORP_DB.dbo.hris_worker` (plus `hris_cost_center`, career/job joins). Read-only.
+3. Adapter runs the HRIS `byNip` SELECT against `dbo.hris_Employee` (plus `MASCOSTCENTER`, career/job joins). Read-only. The database is `DB_DATABASE` from `.env`, never hardcoded.
 4. Login succeeds only when the employee exists, is active (`is_Active = '1'`), and the HRIS `BirthDate` matches the supplied date (date-only compare; time component ignored).
 5. Anything else returns `401`.
 

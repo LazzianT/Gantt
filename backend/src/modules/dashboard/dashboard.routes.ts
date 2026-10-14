@@ -6,7 +6,7 @@ import { guardProject, projectFromParam } from "../../middleware/project-members
 import { ValidationError } from "../../middleware/error.js";
 import { PROJECT_HEALTHS, PROJECT_STATUSES } from "../projects/projects.repository.js";
 import type { Exec } from "./dashboard.repository.js";
-import { getGlobalDashboard, getPortfolio, getProjectDashboard } from "./dashboard.service.js";
+import { getGlobalDashboard, getMyTasksDashboard, getPortfolio, getProjectDashboard } from "./dashboard.service.js";
 
 const portfolioQuery = z.object({
   status: z.enum(PROJECT_STATUSES).optional(),
@@ -36,6 +36,14 @@ dashboardRouter.use(requireAuth);
 dashboardRouter.get("/dashboard", async (req, res, next) => {
   try {
     res.json({ data: await getGlobalDashboard(exec, req.user!) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+dashboardRouter.get("/dashboard/my-tasks", async (req, res, next) => {
+  try {
+    res.json({ data: await getMyTasksDashboard(exec, req.user!) });
   } catch (err) {
     next(err);
   }

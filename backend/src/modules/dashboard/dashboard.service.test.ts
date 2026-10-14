@@ -217,6 +217,8 @@ describe("getGlobalDashboard", () => {
       status: "In Progress",
       progress_percent: 40,
       is_critical: true,
+      actual_finish: null,
+      actual_finish_status: null,
     };
     vi.mocked(repo.myTasks).mockResolvedValue([task]);
 

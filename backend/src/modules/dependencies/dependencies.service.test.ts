@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+﻿import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../scheduling/schedule.service.js", () => ({
   recomputeProject: vi.fn(async () => ({})),
@@ -53,6 +53,14 @@ function row(overrides: Partial<TaskRow> = {}): TaskRow {
     total_float_days: null,
     free_float_days: null,
     is_critical: false,
+    actual_start: null,
+    actual_finish: null,
+    actual_finish_status: null,
+    actual_finish_submitted_by: null,
+    actual_finish_submitted_at: null,
+    actual_finish_reviewed_by: null,
+    actual_finish_reviewed_at: null,
+    actual_finish_comment: null,
     schedule_version: 0,
     sort_order: 0,
     created_at: "2026-01-01T00:00:00.000Z",

@@ -96,6 +96,11 @@ export function readEnv(source: NodeJS.ProcessEnv = process.env) {
     employee: {
       cacheTtlSeconds: readInt(source.EMPLOYEE_CACHE_TTL_SECONDS, 300),
     },
+    uploads: {
+      // Task evidence files live outside the build output so `tsc` never wipes them.
+      evidenceDir: readString(source.UPLOADS_EVIDENCE_DIR, "uploads/evidence"),
+      maxEvidenceBytes: readInt(source.UPLOADS_MAX_EVIDENCE_BYTES, 5 * 1024 * 1024),
+    },
     auth: {
       adminNips: readList(source.AUTH_ADMIN_NIPS),
       managerNips: readList(source.AUTH_MANAGER_NIPS),

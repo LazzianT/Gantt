@@ -1,6 +1,8 @@
 export type TaskType = 'Summary' | 'Normal' | 'Milestone';
 export type TaskStatus = 'Not Started' | 'In Progress' | 'Completed' | 'Blocked' | 'Cancelled';
 export type TaskPriority = 'Low' | 'Medium' | 'High' | 'Critical';
+/** Manager review state of the as-built finish date a PIC submitted. */
+export type ActualFinishStatus = 'Pending' | 'Approved' | 'Rejected';
 
 export interface Task {
   id: number;
@@ -22,6 +24,10 @@ export interface Task {
   picName: string | null;
   isMilestone: boolean;
   isCritical: boolean;
+  actualStart: string | null;
+  actualFinish: string | null;
+  actualFinishStatus: ActualFinishStatus | null;
+  actualFinishComment: string | null;
   sortOrder: number;
   children: Task[];
 }
@@ -58,4 +64,31 @@ export interface EmployeeSearchResult {
   name: string;
   position: string | null;
   departmentName: string;
+}
+
+/** Evidence attached to a task: a note, a file, or both. */
+export interface TaskEvidence {
+  id: number;
+  taskId: number;
+  note: string | null;
+  fileName: string | null;
+  mimeType: string | null;
+  sizeBytes: number | null;
+  hasFile: boolean;
+  uploadedByNip: string | null;
+  createdAt: string;
+}
+
+/** One row of the manager's as-built finish date queue. */
+export interface FinishReview {
+  taskId: number;
+  name: string;
+  picNip: string | null;
+  picName: string | null;
+  plannedFinish: string | null;
+  actualFinish: string | null;
+  status: ActualFinishStatus;
+  submittedBy: string | null;
+  submittedAt: string | null;
+  comment: string | null;
 }

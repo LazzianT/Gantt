@@ -72,6 +72,15 @@ export const projectOfBaseline: ProjectResolver = (exec, req) =>
     id: numericParam(req, "id"),
   });
 
+export const projectOfEvidence: ProjectResolver = (exec, req) =>
+  projectOf(
+    exec,
+    `SELECT t.project_id FROM pm.task_evidence e
+      JOIN pm.project_tasks t ON t.task_id = e.task_id
+     WHERE e.evidence_id = @id`,
+    { id: numericParam(req, "id") },
+  );
+
 /** True when `nip` has a row in pm.project_members for the project. */
 export async function isProjectMember(exec: Exec, projectId: number, nip: string): Promise<boolean> {
   const rows = await exec(`SELECT 1 FROM pm.project_members WHERE project_id = @projectId AND employee_nip = @nip`, {
@@ -133,5 +142,37 @@ export function requireSelfOrRole(paramName: string, roles: Role[]): RequestHand
       return;
     }
     res.status(403).json({ error: { code: "FORBIDDEN", message: "Insufficient role" } });
+  };
+}
+
+/**
+ * Guard for the "My Tasks" write actions (mark done, attach evidence). Membership is not
+ * enough: only the task's own PIC may act, so a project member cannot close someone
+ * else's work. Admin/manager keep access for supervision; no membership bypass applies.
+ */
+export function requireTaskPic(options: ProjectAuthOptions): RequestHandler {
+  const { exec, bypassRoles = [] } = options;
+  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    const user = req.user;
+    if (!user || typeof user.sub !== "string") {
+      res.status(401).json({ error: { code: "UNAUTHORIZED", message: "Missing or invalid token" } });
+      return;
+    }
+    try {
+      const id = numericParam(req, "id");
+      const rows = await exec(
+        `SELECT pic_nip FROM pm.project_tasks WHERE task_id = @id AND is_deleted = 0`,
+        { id },
+      );
+      const row = rows[0] as { pic_nip?: string | null } | undefined;
+      if (!row) throw new NotFoundError("Task not found");
+      const picNip = row.pic_nip ?? null;
+      if (picNip !== user.sub && !bypassRoles.includes(user.role)) {
+        throw new ForbiddenError("Only the task PIC can update this task");
+      }
+      next();
+    } catch (err) {
+      next(err);
+    }
   };
 }

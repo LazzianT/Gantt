@@ -1,6 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+﻿import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { TaskRepository, TaskRow } from "./tasks.repository.js";
-import { buildTree, createTask, move, toTaskDTO, updateTask } from "./tasks.service.js";
+import { buildTree, createTask, move, reviewActualFinish, setMyTaskCompletion, toTaskDTO, updateTask } from "./tasks.service.js";
 
 function row(overrides: Partial<TaskRow> = {}): TaskRow {
   return {
@@ -28,6 +28,14 @@ function row(overrides: Partial<TaskRow> = {}): TaskRow {
     total_float_days: null,
     free_float_days: null,
     is_critical: false,
+    actual_start: null,
+    actual_finish: null,
+    actual_finish_status: null,
+    actual_finish_submitted_by: null,
+    actual_finish_submitted_at: null,
+    actual_finish_reviewed_by: null,
+    actual_finish_reviewed_at: null,
+    actual_finish_comment: null,
     schedule_version: 0,
     sort_order: 0,
     created_at: "2026-01-01T00:00:00.000Z",
@@ -48,6 +56,10 @@ function fakeRepo(overrides: Partial<FakeRepo> = {}): FakeRepo {
     softDelete: vi.fn(async () => false),
     setParent: vi.fn(async () => undefined),
     updateScheduleFields: vi.fn(async () => undefined),
+    setCompletion: vi.fn(async () => null),
+    reviewActualFinish: vi.fn(async () => null),
+    listFinishReviews: vi.fn(async () => []),
+    exec: vi.fn(async () => []),
     ...overrides,
   } as FakeRepo;
 }
@@ -136,29 +148,195 @@ describe("tasks.service", () => {
     expect(dto.picName).toBe("Lazzian Al Falah");
   });
 
-  it("rejects a child task that starts before its parent", async () => {
+  it("expands the parent when a child starts before it", async () => {
     const parent = row({ task_id: 5, start_date: "2026-03-10", finish_date: "2026-03-20" });
-    const repo = fakeRepo({ getById: vi.fn(async (id: number) => (id === 5 ? parent : null)) });
-    await expect(
-      createTask(repo as unknown as TaskRepository, {
-        project_id: 7,
-        name: "Child",
-        parent_task_id: 5,
-        start_date: "2026-03-01",
-      }),
-    ).rejects.toThrow(/before its parent/);
-    expect(repo.create).not.toHaveBeenCalled();
+    const repo = fakeRepo({
+      getById: vi.fn(async (id: number) => (id === 5 ? parent : null)),
+      create: vi.fn(async () => row({ task_id: 6, parent_task_id: 5, start_date: "2026-03-01" })),
+      update: vi.fn(async () => parent),
+    });
+    await createTask(repo as unknown as TaskRepository, {
+      project_id: 7,
+      name: "Child",
+      parent_task_id: 5,
+      start_date: "2026-03-01",
+    });
+    expect(repo.update).toHaveBeenCalledWith(5, { start_date: "2026-03-01" });
   });
 
-  it("rejects a child task whose finish is after its parent", async () => {
+  it("expands the parent when a child finishes after it", async () => {
     const parent = row({ task_id: 5, start_date: "2026-03-10", finish_date: "2026-03-20" });
     const child = row({ task_id: 6, parent_task_id: 5, start_date: "2026-03-11", finish_date: "2026-03-15" });
     const repo = fakeRepo({
       getById: vi.fn(async (id: number) => (id === 6 ? child : id === 5 ? parent : null)),
+      update: vi.fn(async () => child),
     });
+    await updateTask(repo as unknown as TaskRepository, 6, { finish_date: "2026-03-25" });
+    expect(repo.update).toHaveBeenCalledWith(6, { finish_date: "2026-03-25" });
+    expect(repo.update).toHaveBeenCalledWith(5, { finish_date: "2026-03-25" });
+  });
+
+  it("expands every ancestor up the chain", async () => {
+    const grandparent = row({ task_id: 1, start_date: "2026-03-10", finish_date: "2026-03-20" });
+    const parent = row({ task_id: 5, parent_task_id: 1, start_date: "2026-03-12", finish_date: "2026-03-18" });
+    const child = row({ task_id: 6, parent_task_id: 5, start_date: "2026-03-13", finish_date: "2026-03-15" });
+    const repo = fakeRepo({
+      getById: vi.fn(async (id: number) => (id === 1 ? grandparent : id === 5 ? parent : id === 6 ? child : null)),
+      update: vi.fn(async () => child),
+    });
+    await updateTask(repo as unknown as TaskRepository, 6, { finish_date: "2026-03-25" });
+    expect(repo.update).toHaveBeenCalledWith(5, { finish_date: "2026-03-25" });
+    expect(repo.update).toHaveBeenCalledWith(1, { finish_date: "2026-03-25" });
+  });
+
+  it("leaves the parent untouched when the child stays inside its range", async () => {
+    const parent = row({ task_id: 5, start_date: "2026-03-10", finish_date: "2026-03-20" });
+    const child = row({ task_id: 6, parent_task_id: 5, start_date: "2026-03-11", finish_date: "2026-03-15" });
+    const repo = fakeRepo({
+      getById: vi.fn(async (id: number) => (id === 5 ? parent : id === 6 ? child : null)),
+      update: vi.fn(async () => child),
+    });
+    await updateTask(repo as unknown as TaskRepository, 6, { start_date: "2026-03-12" });
+    expect(repo.update).toHaveBeenCalledTimes(1);
+    expect(repo.update).toHaveBeenCalledWith(6, { start_date: "2026-03-12" });
+  });
+});
+
+describe("setMyTaskCompletion", () => {
+  it("marks the task done with the reported date and parks it as Pending", async () => {
+    const done = row({
+      task_id: 4,
+      status: "Completed",
+      progress_percent: 100,
+      actual_finish: "2026-04-02",
+      actual_finish_status: "Pending",
+    });
+    const repo = fakeRepo({
+      getById: vi.fn(async () => row({ task_id: 4 })),
+      setCompletion: vi.fn(async () => done),
+    });
+    const dto = await setMyTaskCompletion(
+      repo as unknown as TaskRepository,
+      4,
+      { completed: true, actual_finish: "2026-04-02" },
+      "NIP-42",
+    );
+    expect(repo.setCompletion).toHaveBeenCalledWith(4, true, "2026-04-02", "NIP-42");
+    expect(dto.status).toBe("Completed");
+    expect(dto.actualFinish).toBe("2026-04-02");
+    expect(dto.actualFinishStatus).toBe("Pending");
+    expect(repo.exec).toHaveBeenCalledWith(
+      expect.stringContaining("INSERT INTO pm.project_activity_logs"),
+      expect.objectContaining({ action: "complete", actor_nip: "NIP-42" }),
+    );
+  });
+
+  it("requires the actual finish date when completing", async () => {
+    const repo = fakeRepo({ getById: vi.fn(async () => row({ task_id: 4 })) });
     await expect(
-      updateTask(repo as unknown as TaskRepository, 6, { finish_date: "2026-03-25" }),
-    ).rejects.toThrow(/after its parent/);
-    expect(repo.update).not.toHaveBeenCalled();
+      setMyTaskCompletion(repo as unknown as TaskRepository, 4, { completed: true }, "NIP-42"),
+    ).rejects.toThrow("actual_finish is required");
+    expect(repo.setCompletion).not.toHaveBeenCalled();
+  });
+
+  it("rejects a malformed actual finish date", async () => {
+    const repo = fakeRepo({ getById: vi.fn(async () => row({ task_id: 4 })) });
+    await expect(
+      setMyTaskCompletion(
+        repo as unknown as TaskRepository,
+        4,
+        { completed: true, actual_finish: "02/04/2026" },
+        "NIP-42",
+      ),
+    ).rejects.toThrow("actual_finish must be an ISO date");
+  });
+
+  it("reopens to In Progress with zero progress and no date", async () => {
+    const reopened = row({ task_id: 4, status: "In Progress", progress_percent: 0, actual_finish: null });
+    const repo = fakeRepo({
+      getById: vi.fn(async () => row({ task_id: 4, status: "Completed" })),
+      setCompletion: vi.fn(async () => reopened),
+    });
+    const dto = await setMyTaskCompletion(repo as unknown as TaskRepository, 4, { completed: false }, "NIP-42");
+    expect(repo.setCompletion).toHaveBeenCalledWith(4, false, null, "NIP-42");
+    expect(dto.status).toBe("In Progress");
+    expect(dto.actualFinish).toBeNull();
+    expect(repo.exec).toHaveBeenCalledWith(
+      expect.stringContaining("INSERT INTO pm.project_activity_logs"),
+      expect.objectContaining({ action: "reopen" }),
+    );
+  });
+
+  it("throws when the task no longer exists", async () => {
+    const repo = fakeRepo({ getById: vi.fn(async () => null) });
+    await expect(
+      setMyTaskCompletion(repo as unknown as TaskRepository, 9, { completed: true }, "NIP-42"),
+    ).rejects.toThrow("Task not found");
+    expect(repo.exec).not.toHaveBeenCalled();
+  });
+});
+
+describe("reviewActualFinish", () => {
+  const pending = row({
+    task_id: 4,
+    status: "Completed",
+    actual_finish: "2026-04-02",
+    actual_finish_status: "Pending",
+  });
+
+  it("approves a pending date", async () => {
+    const approved = row({ ...pending, actual_finish_status: "Approved" });
+    const repo = fakeRepo({
+      getById: vi.fn(async () => pending),
+      reviewActualFinish: vi.fn(async () => approved),
+    });
+    const dto = await reviewActualFinish(repo as unknown as TaskRepository, 4, "Approved", "NIP-77", null);
+    expect(repo.reviewActualFinish).toHaveBeenCalledWith(4, "Approved", "NIP-77", null);
+    expect(dto.actualFinishStatus).toBe("Approved");
+    expect(repo.exec).toHaveBeenCalledWith(
+      expect.stringContaining("INSERT INTO pm.project_activity_logs"),
+      expect.objectContaining({ action: "approve_actual_finish", actor_nip: "NIP-77" }),
+    );
+  });
+
+  it("rejects the completion and sends the task back to In Progress", async () => {
+    const rejected = row({
+      task_id: 4,
+      status: "In Progress",
+      progress_percent: 0,
+      actual_finish: null,
+      actual_finish_status: "Rejected",
+      actual_finish_comment: "Tanggal masih salah",
+    });
+    const repo = fakeRepo({
+      getById: vi.fn(async () => pending),
+      reviewActualFinish: vi.fn(async () => rejected),
+    });
+    const dto = await reviewActualFinish(
+      repo as unknown as TaskRepository,
+      4,
+      "Rejected",
+      "NIP-77",
+      "Tanggal masih salah",
+    );
+    expect(repo.reviewActualFinish).toHaveBeenCalledWith(4, "Rejected", "NIP-77", "Tanggal masih salah");
+    expect(dto.status).toBe("In Progress");
+    expect(dto.actualFinishStatus).toBe("Rejected");
+  });
+
+  it("refuses a second decision on the same submission", async () => {
+    const reviewed = row({ ...pending, actual_finish_status: "Approved" });
+    const repo = fakeRepo({ getById: vi.fn(async () => reviewed) });
+    await expect(reviewActualFinish(repo as unknown as TaskRepository, 4, "Approved", "NIP-77", null)).rejects.toThrow(
+      "already been reviewed",
+    );
+    expect(repo.reviewActualFinish).not.toHaveBeenCalled();
+  });
+
+  it("requires a reason when rejecting", async () => {
+    const repo = fakeRepo({ getById: vi.fn(async () => pending) });
+    await expect(reviewActualFinish(repo as unknown as TaskRepository, 4, "Rejected", "NIP-77", "  ")).rejects.toThrow(
+      "A rejection needs a reason",
+    );
   });
 });

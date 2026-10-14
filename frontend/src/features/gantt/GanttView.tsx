@@ -13,7 +13,6 @@ import { AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react';
 import Skeleton from '../../components/Skeleton';
 import { ToastProvider, useToast } from '../../components/Toast';
 import { fullDate } from '../../lib/format';
-import DependencyLayer, { type DepGeometry } from './DependencyLayer';
 import GanttToolbar from './GanttToolbar';
 import TodayMarker from './TodayMarker';
 import { useGanttInteractions, type GanttInteractions } from './useGanttInteractions';
@@ -28,7 +27,8 @@ import {
 } from './useGanttData';
 
 const HEADER_HEIGHT = 48;
-const OVERSCAN = 10;
+const OVERSCAN = 24;
+const PAN_THRESHOLD = 3;
 const LABEL_WIDE = 320;
 const LABEL_NARROW = 200;
 
@@ -80,7 +80,6 @@ const Row = memo(function Row({
   const box = barBox(row, axis);
   const critical = row.isCritical;
   const dim = criticalOnly && !critical && row.type === 'Task';
-  const linkTarget = interactions?.linkTargetId === row.id;
 
   const label = `${row.name}, ${row.type}, ${fullDate(row.start)} to ${fullDate(row.finish)}, ${
     row.durationDays
@@ -95,10 +94,10 @@ const Row = memo(function Row({
       data-selected={selected || undefined}
       onClick={() => onSelect(row.id)}
       style={{ height: ROW_HEIGHT }}
-      className={`group flex cursor-pointer ${selected ? 'bg-brand-soft/60' : 'hover:bg-surface-subtle/50'}`}
+      className={`group flex ${selected ? 'bg-brand-soft/60' : 'hover:bg-surface-subtle/50'}`}
     >
       <div
-        className={`sticky left-0 z-rowFrozen flex h-8 shrink-0 items-center gap-1 border-r border-line-hairline px-2 ${
+        className={`sticky left-0 z-rowFrozen flex h-8 shrink-0 cursor-pointer items-center gap-1 border-r border-line-hairline px-2 ${
           selected ? 'bg-brand-soft' : 'bg-surface group-hover:bg-surface-subtle'
         }`}
         style={{ width: labelWidth }}
@@ -143,52 +142,45 @@ const Row = memo(function Row({
             }}
           />
         )}
-        {renderBar(row, box, { criticalOnly, dim, interactions, linkTarget })}
+        {renderBar(row, box, { criticalOnly, dim, interactions })}
       </div>
     </div>
   );
 });
 
-function ResizeHandle({ row, interactions }: { row: GanttRow; interactions: GanttInteractions }) {
+function ResizeHandle({
+  row,
+  side,
+  interactions,
+}: {
+  row: GanttRow;
+  side: 'start' | 'end';
+  interactions: GanttInteractions;
+}) {
   return (
     <button
       type="button"
-      aria-label={`Resize ${row.name}`}
+      aria-label={side === 'end' ? `Resize ${row.name}` : `Resize start ${row.name}`}
       title="Drag to change duration"
       onPointerDown={(event) => {
         event.stopPropagation();
-        interactions.onResizePointerDown(event, row);
+        if (side === 'end') interactions.onResizePointerDown(event, row);
+        else interactions.onResizeStartPointerDown(event, row);
       }}
-      className="absolute inset-y-0 right-0 w-1.5 cursor-ew-resize touch-none opacity-0 transition-opacity duration-fast group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:shadow-focus"
+      className={`absolute inset-y-0 ${side === 'end' ? 'right-0' : 'left-0'} w-1.5 cursor-ew-resize touch-none opacity-0 transition-opacity duration-fast group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:shadow-focus`}
     >
       <span className="pointer-events-none absolute left-1/2 top-1/2 h-3 w-0.5 -translate-x-1/2 -translate-y-1/2 rounded-xs bg-white/80" />
     </button>
   );
 }
 
-function LinkHandle({ row, interactions }: { row: GanttRow; interactions: GanttInteractions }) {
-  return (
-    <button
-      type="button"
-      aria-label={`Link a successor to ${row.name}`}
-      title="Drag onto another bar to link"
-      onPointerDown={(event) => {
-        event.stopPropagation();
-        interactions.onLinkPointerDown(event, row);
-      }}
-      className="absolute -right-1 top-1/2 h-2.5 w-2.5 -translate-y-1/2 cursor-crosshair touch-none rounded-full border border-brand bg-surface opacity-0 transition-opacity duration-fast group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:shadow-focus"
-    />
-  );
-}
-
 function renderBar(
   row: GanttRow,
   box: BarBox,
-  opts: { criticalOnly: boolean; dim: boolean; interactions: GanttInteractions | null; linkTarget: boolean },
+  opts: { criticalOnly: boolean; dim: boolean; interactions: GanttInteractions | null },
 ) {
   const critical = row.isCritical;
-  const { interactions, linkTarget } = opts;
-  const ring = linkTarget ? 'ring-2 ring-brand ring-offset-1 ring-offset-surface' : '';
+  const { interactions } = opts;
   const dragProps = interactions
     ? { onPointerDown: (event: ReactPointerEvent) => interactions.onBarPointerDown(event, row) }
     : {};
@@ -202,7 +194,7 @@ function renderBar(
         data-task-id={row.id}
         data-task-type={row.type}
         {...dragProps}
-        className={`absolute ${interactions ? 'cursor-grab touch-none' : ''} ${ring}`}
+        className={`absolute ${interactions ? 'cursor-grab touch-none' : ''}`}
         style={{ left: box.left, top: 10, width: 12, height: 12 }}
         title={row.name}
       >
@@ -210,7 +202,6 @@ function renderBar(
           className="absolute inset-0 rotate-45 border"
           style={{ borderColor: color, backgroundColor: done ? color : 'transparent' }}
         />
-        {interactions && <LinkHandle row={row} interactions={interactions} />}
       </span>
     );
   }
@@ -233,7 +224,7 @@ function renderBar(
       data-task-id={row.id}
       data-task-type={row.type}
       {...dragProps}
-      className={`absolute ${interactions ? 'cursor-grab touch-none' : ''} ${ring}`}
+      className={`absolute ${interactions ? 'cursor-grab touch-none' : ''}`}
       style={{ left: box.left, width: box.width, top: BAR_TOP, height: BAR_HEIGHT, opacity: opts.dim ? 0.4 : 1 }}
       title={`${row.name} · ${Math.round(row.progress)}% · float ${row.totalFloat}d`}
     >
@@ -246,8 +237,12 @@ function renderBar(
         className={`absolute inset-y-0 left-0 rounded-xs ${fill}`}
         style={{ width: `${Math.max(0, Math.min(100, row.progress))}%` }}
       />
-      {interactions && <ResizeHandle row={row} interactions={interactions} />}
-      {interactions && <LinkHandle row={row} interactions={interactions} />}
+      {interactions && (
+        <>
+          <ResizeHandle row={row} side="start" interactions={interactions} />
+          <ResizeHandle row={row} side="end" interactions={interactions} />
+        </>
+      )}
     </span>
   );
 }
@@ -294,7 +289,7 @@ function GridLayer({ axis, compressed, height }: { axis: Axis; compressed: boole
           .map((day) => (
             <div
               key={day.date}
-              className="absolute inset-y-0 bg-sched-nonworking"
+              className={`absolute inset-y-0 ${day.isWeekend ? 'bg-sched-weekend' : 'bg-sched-nonworking'}`}
               style={{ left: day.left, width: day.width }}
             />
           ))}
@@ -324,7 +319,7 @@ function GanttViewInner({ projectId }: { projectId: number }) {
   const [scale, setScale] = useState<Scale>('Day');
   const [zoom, setZoom] = useState(1);
   const [compressed, setCompressed] = useState(true);
-  const [criticalOnly, setCriticalOnly] = useState(true);
+  const [criticalOnly, setCriticalOnly] = useState(false);
   const [showBaseline, setShowBaseline] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -333,11 +328,62 @@ function GanttViewInner({ projectId }: { projectId: number }) {
   const { rows, axis } = data;
   const interactions = useGanttInteractions({
     axis,
-    rowIndex: data.rowIndex,
     reload: data.reload,
     notify,
   });
   const { scrollRef, scrollTop, viewportH, onScroll } = useGanttViewport(data.loading, rows.length);
+
+  const [panning, setPanning] = useState(false);
+  const panState = useRef<{ pointerId: number; startX: number; startY: number; left: number; top: number } | null>(
+    null,
+  );
+  const didPan = useRef(false);
+
+  const onPanPointerDown = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (event.button !== 0 || event.pointerType === 'touch') return;
+      const target = event.target as HTMLElement;
+      if (target.closest('[data-bar]') || target.closest('button')) return;
+      const el = scrollRef.current;
+      if (!el) return;
+      didPan.current = false;
+      panState.current = {
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        left: el.scrollLeft,
+        top: el.scrollTop,
+      };
+      el.setPointerCapture(event.pointerId);
+      setPanning(true);
+    },
+    [scrollRef],
+  );
+
+  const onPanPointerMove = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      const state = panState.current;
+      const el = scrollRef.current;
+      if (!state || !el || state.pointerId !== event.pointerId) return;
+      const dx = event.clientX - state.startX;
+      const dy = event.clientY - state.startY;
+      if (Math.abs(dx) > PAN_THRESHOLD || Math.abs(dy) > PAN_THRESHOLD) didPan.current = true;
+      el.scrollLeft = state.left - dx;
+      el.scrollTop = state.top - dy;
+    },
+    [scrollRef],
+  );
+
+  const endPan = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      const state = panState.current;
+      if (!state || state.pointerId !== event.pointerId) return;
+      scrollRef.current?.releasePointerCapture(event.pointerId);
+      panState.current = null;
+      setPanning(false);
+    },
+    [scrollRef],
+  );
 
   const [labelW, setLabelW] = useState(() =>
     typeof window !== 'undefined' && window.innerWidth < 1024 ? LABEL_NARROW : LABEL_WIDE,
@@ -351,18 +397,9 @@ function GanttViewInner({ projectId }: { projectId: number }) {
   }, []);
 
   const bodyHeight = rows.length * ROW_HEIGHT;
-  const startIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
+  const startIndex = Math.max(0, Math.min(Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN, Math.max(0, rows.length - 1)));
   const endIndex = Math.min(rows.length, Math.ceil((scrollTop + viewportH) / ROW_HEIGHT) + OVERSCAN);
   const visible = useMemo(() => rows.slice(startIndex, endIndex), [rows, startIndex, endIndex]);
-
-  const geometry = useMemo(() => {
-    const map = new Map<number, DepGeometry>();
-    rows.forEach((row, index) => {
-      const box = barBox(row, axis);
-      map.set(row.id, { left: box.left, width: box.width, row: index, critical: row.isCritical });
-    });
-    return map;
-  }, [rows, axis]);
 
   const scrollRowIntoView = useCallback(
     (index: number) => {
@@ -467,21 +504,26 @@ function GanttViewInner({ projectId }: { projectId: number }) {
           tabIndex={0}
           onScroll={onScroll}
           onKeyDown={onKeyDown}
-          className="min-h-0 flex-1 overflow-auto focus:outline-none"
+          onPointerDown={onPanPointerDown}
+          onPointerMove={onPanPointerMove}
+          onPointerUp={endPan}
+          onPointerCancel={endPan}
+          onClickCapture={(event) => {
+            if (didPan.current) {
+              didPan.current = false;
+              event.stopPropagation();
+              event.preventDefault();
+            }
+          }}
+          className={`min-h-0 flex-1 overflow-auto focus:outline-none ${
+            panning ? 'cursor-grabbing select-none' : 'cursor-grab'
+          }`}
         >
           <div className="relative" style={{ width: labelW + axis.totalWidth }}>
             <TimelineHeader axis={axis} labelWidth={labelW} />
             <div className="relative" style={{ height: bodyHeight }}>
               <div className="absolute top-0" style={{ left: labelW }}>
                 <GridLayer axis={axis} compressed={compressed} height={bodyHeight} />
-              </div>
-              <div className="absolute top-0" style={{ left: labelW }}>
-                <DependencyLayer
-                  dependencies={data.dependencies}
-                  geometry={geometry}
-                  totalWidth={axis.totalWidth}
-                  totalHeight={bodyHeight}
-                />
               </div>
               {axis.todayX != null && <TodayMarker x={labelW + axis.todayX} height={bodyHeight} />}
               <div style={{ height: startIndex * ROW_HEIGHT }} />
@@ -501,20 +543,6 @@ function GanttViewInner({ projectId }: { projectId: number }) {
                   interactions={editable ? interactions : null}
                 />
               ))}
-              <svg
-                ref={interactions.linkSvgRef}
-                aria-hidden="true"
-                className="pointer-events-none absolute top-0 overflow-visible"
-                style={{ left: labelW, width: axis.totalWidth, height: bodyHeight, zIndex: 45 }}
-              >
-                <path
-                  ref={interactions.linkPathRef}
-                  fill="none"
-                  stroke="#0D1F5C"
-                  strokeWidth={1.5}
-                  strokeDasharray="4 3"
-                />
-              </svg>
               <div style={{ height: (rows.length - endIndex) * ROW_HEIGHT }} />
             </div>
           </div>

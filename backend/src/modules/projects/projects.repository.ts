@@ -247,6 +247,25 @@ export async function addMember(exec: Exec, projectId: number, data: AddMemberDa
   return rows[0] as MemberRow;
 }
 
+/** Idempotent add-only insert. Existing rows keep their role and allocation; a duplicate
+ *  (project_id, employee_nip) is a no-op thanks to UQ_pm_project_members. */
+export async function ensureMember(
+  exec: Exec,
+  projectId: number,
+  data: { employee_nip: string; employee_name: string },
+): Promise<boolean> {
+  const rows = await exec(
+    `INSERT INTO pm.project_members (project_id, employee_nip, employee_name, role, allocation_percent)
+     OUTPUT INSERTED.member_id
+     SELECT @projectId, @employee_nip, @employee_name, NULL, 100
+     WHERE NOT EXISTS (
+       SELECT 1 FROM pm.project_members WHERE project_id = @projectId AND employee_nip = @employee_nip
+     )`,
+    { projectId, employee_nip: data.employee_nip, employee_name: data.employee_name },
+  );
+  return rows.length > 0;
+}
+
 export async function removeMember(exec: Exec, projectId: number, memberId: number): Promise<boolean> {
   const rows = await exec(
     `DELETE FROM pm.project_members
