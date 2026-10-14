@@ -29,7 +29,7 @@ Express + TypeScript API over SQL Server. Modules under `backend/src/modules/`:
 `resources` (workload), `activity`, `milestones`, `progress`, `baselines`, `dashboard`,
 `evidence`, `reports`, `employees` (HRIS adapter).
 
-- 201 passing vitest tests.
+- 203 passing vitest tests.
 - 17 SQL migrations under `backend/sql/` (`001`..`017`, forward-only, idempotent).
 
 ### Frontend
@@ -47,7 +47,7 @@ Frontend now has a test setup: Vitest + Testing Library (jsdom, `frontend/src/te
 ## Verification
 
 ```
-backend:  npm run typecheck && npm test   # 201 pass
+backend:  npm run typecheck && npm test   # 203 pass
 frontend: npm run typecheck && npm test   # 17 pass (vitest + testing-library)
 frontend: npm run build                   # pass
 ```

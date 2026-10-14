@@ -31,4 +31,15 @@ describe("readEnv", () => {
     expect(config.isDev).toBe(true);
     expect(config.jwt.secret).toBe("dev-insecure-secret");
   });
+
+  it("boots under NODE_ENV=test without credentials", () => {
+    // Vitest sets NODE_ENV=test; requiring secrets here would make a fresh clone untestable.
+    const config = readEnv({ NODE_ENV: "test" });
+    expect(config.jwt.secret).toBe("dev-insecure-secret");
+    expect(config.db.server).toBe("");
+  });
+
+  it("still fails closed for staging", () => {
+    expect(() => readEnv({ NODE_ENV: "staging" })).toThrow(/JWT_SECRET/);
+  });
 });

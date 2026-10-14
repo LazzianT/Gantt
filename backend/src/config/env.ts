@@ -49,12 +49,15 @@ function readDepartCodes(value: string | undefined): string[] {
 export function readEnv(source: NodeJS.ProcessEnv = process.env) {
   const nodeEnv = source.NODE_ENV ?? "";
   const isDev = nodeEnv === "development";
+  // Vitest sets NODE_ENV=test. Tests must boot without real credentials, otherwise a fresh
+  // clone cannot run `npm test` and CI needs secrets just to import a config module.
+  const isTest = nodeEnv === "test";
 
   const configuredSecret = source.JWT_SECRET ?? "";
   if (configuredSecret === DEV_JWT_SECRET) {
     throw new Error(`JWT_SECRET must not be the development default "${DEV_JWT_SECRET}".`);
   }
-  const jwtSecret = configuredSecret === "" ? (isDev ? DEV_JWT_SECRET : "") : configuredSecret;
+  const jwtSecret = configuredSecret === "" ? (isDev || isTest ? DEV_JWT_SECRET : "") : configuredSecret;
 
   const db = {
     server: readString(source.DB_SERVER, ""),
@@ -69,8 +72,8 @@ export function readEnv(source: NodeJS.ProcessEnv = process.env) {
     queryTimeoutMs: readInt(source.DB_QUERY_TIMEOUT_MS, 5000),
   };
 
-  // Fail closed outside development: require a real secret and DB credentials.
-  if (!isDev) {
+  // Fail closed outside development and tests: require a real secret and DB credentials.
+  if (!isDev && !isTest) {
     const missing: string[] = [];
     if (!jwtSecret) missing.push("JWT_SECRET");
     if (!db.server) missing.push("DB_SERVER");
@@ -78,7 +81,7 @@ export function readEnv(source: NodeJS.ProcessEnv = process.env) {
     if (!db.password) missing.push("DB_PASSWORD");
     if (missing.length > 0) {
       throw new Error(
-        `Missing required environment variables (NODE_ENV="${nodeEnv}" is not "development"): ${missing.join(", ")}`,
+        `Missing required environment variables (NODE_ENV="${nodeEnv}" is not "development" or "test"): ${missing.join(", ")}`,
       );
     }
   }

@@ -15,7 +15,7 @@ Plan → schedule → execute → prove → approve → report.
 [![Tailwind](https://img.shields.io/badge/TailwindCSS-3-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
 [![Express](https://img.shields.io/badge/Express-4-000000?style=flat-square&logo=express&logoColor=white)](https://expressjs.com)
 [![SQLServer](https://img.shields.io/badge/SQL%20Server-CC2927?style=flat-square&logo=microsoft&logoColor=white)](https://microsoft.com/sql-server)
-[![Vitest](https://img.shields.io/badge/tests-218%20passing-brightgreen?style=flat-square&logo=vitest&logoColor=white)](https://vitest.dev)
+[![Vitest](https://img.shields.io/badge/tests-220%20passing-brightgreen?style=flat-square&logo=vitest&logoColor=white)](https://vitest.dev)
 
 </div>
 
@@ -125,7 +125,7 @@ Key decisions:
 
 **Database** — SQL Server, schema `pm`, 17 idempotent migrations
 
-**Quality** — 218 passing tests, CI running typecheck, tests, and production build on every push and pull request
+**Quality** — 220 passing tests, CI running typecheck, tests, and production build on every push and pull request
 
 ## Quick start
 
