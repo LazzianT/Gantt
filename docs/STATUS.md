@@ -1,6 +1,6 @@
 # Status
 
-Project state ledger. Last updated: 2026-10-09.
+Project state ledger. Last updated: 2026-10-14.
 
 ## Milestones
 
@@ -27,10 +27,10 @@ Express + TypeScript API over SQL Server. Modules under `backend/src/modules/`:
 
 `auth`, `projects`, `tasks` (WBS), `dependencies`, `scheduling` (CPM + calendar),
 `resources` (workload), `activity`, `milestones`, `progress`, `baselines`, `dashboard`,
-`employees` (HRIS adapter).
+`evidence`, `reports`, `employees` (HRIS adapter).
 
-- 134 passing vitest tests.
-- 13 SQL migrations under `backend/sql/` (`001`..`013`, forward-only, idempotent).
+- 201 passing vitest tests.
+- 17 SQL migrations under `backend/sql/` (`001`..`017`, forward-only, idempotent).
 
 ### Frontend
 
@@ -39,14 +39,15 @@ React + Vite + Tailwind. Features under `frontend/src/features/`:
 - `auth` — login by NIP + Tanggal Lahir (HRIS-backed JWT); dev-only demo fallback.
 - `portfolio` — project list.
 - `workspace` — tabs: overview, task grid, gantt (+ interactions), resources/workload,
-  team, milestones, baseline.
+  team, milestones, baseline, reports, plus the manager finish-date approval panel.
+- `tasks` — My Tasks checklist with completion date and evidence capture.
 
 Frontend now has a test setup: Vitest + Testing Library (jsdom, `frontend/src/test/setup.ts`), 17 tests.
 
 ## Verification
 
 ```
-backend:  npm run typecheck && npm test   # 134 pass
+backend:  npm run typecheck && npm test   # 201 pass
 frontend: npm run typecheck && npm test   # 17 pass (vitest + testing-library)
 frontend: npm run build                   # pass
 ```
@@ -57,12 +58,12 @@ Auth: NIP + Tanggal Lahir validated against read-only HRIS via `EmployeeProvider
 
 - No DB integration tests — unit tests use fakes / fake-exec only.
 - No transaction wrapper around multi-write flows.
-- No project-level authz (IDOR) on nested routes.
 - `dependencies`, `milestones`, `progress`, `activity` return raw `snake_case` rows —
   latent DTO drift.
 - Gantt time axis assumes the default Mon–Fri calendar; no calendar endpoint yet.
-- Reports tab now provides schedule variance, delay analysis, evidence/approval audit, and browser print/PDF.
-- No runtime screenshot / browser verification.
+- Reports tab provides schedule variance, delay analysis, evidence/approval audit, and
+  browser print/PDF; it has no persisted report definition or scheduled export yet.
+- No CI workflow; typecheck and tests are run locally.
 - Doc-vs-schema naming drift partially unresolved.
 
 ## Architecture decisions
@@ -79,8 +80,8 @@ Auth: NIP + Tanggal Lahir validated against read-only HRIS via `EmployeeProvider
 ## Next steps (priority order)
 
 1. Calendar endpoint + Gantt axis binding.
-2. Transaction wrapper + project-level authz.
-3. DTO normalization for remaining raw endpoints.
-4. Integration / e2e tests against a real SQL Server.
-5. Reports / export.
-6. Portfolio create-project UI.
+2. Transaction wrapper + DTO normalization for remaining raw endpoints.
+3. Integration / e2e tests against a real SQL Server.
+4. CI workflow running typecheck, tests, and build.
+5. Portfolio create-project UI.
+6. Directory view (HRIS-backed people browse).
