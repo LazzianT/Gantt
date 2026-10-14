@@ -1,47 +1,90 @@
-# Gantt — Project Management
+# ZodGantt
 
-Standalone enterprise Project Management app. Server-authoritative CPM scheduling, Gantt as a
-pure view, HRIS-backed people directory behind an adapter. Owns schema `pm` in database `CORP_DB`.
+Modern project management workspace for planning, scheduling, tracking, and reporting delivery work.
 
-## Structure
+ZodGantt combines a server-authoritative CPM scheduler with an interactive Gantt view, PIC-owned tasks, evidence capture, manager approval, and project reports.
 
-- `docs/` — authoritative design docs. See [docs/](docs/):
-  - [architecture.md](docs/architecture.md) — layers, API map, ADRs.
-  - [scheduling-engine.md](docs/scheduling-engine.md) — CPM + calendar math.
-  - [gantt-engine.md](docs/gantt-engine.md) — Gantt view contract and interaction.
-  - [employee-integration.md](docs/employee-integration.md) — HRIS boundary.
-  - [database-design.md](docs/database-design.md) — `pm` schema, migrations.
-  - [design-system.md](docs/design-system.md) — tokens and components.
-  - [STATUS.md](docs/STATUS.md) — milestone ledger and tech debt.
-- `backend/` — Node + Express + TypeScript API, SQL Server via `mssql`.
-- `frontend/` — React + Vite + Tailwind SPA.
+## Highlights
 
-## Backend setup
+- Interactive Gantt timeline with WBS hierarchy, working days, critical path, baseline overlay, zoom, and today marker
+- Project dashboard with progress, overdue work, milestones, activity, and project health
+- My Tasks view scoped to the logged-in PIC
+- Completion workflow with actual finish date and optional note/file evidence
+- Manager approval workflow for submitted actual finish dates
+- Reports for schedule variance, delay analysis, and evidence/approval audit
+- Browser print/PDF support for project reports
+- HRIS-backed employee directory boundary
+
+## Screenshots
+
+### Dashboard
+
+![Dashboard](screenshots/dashboard.png)
+
+### Gantt scheduling
+
+![Gantt](screenshots/gantt.png)
+
+### My Tasks
+
+![My Tasks](screenshots/my-tasks.png)
+
+### Project reports
+
+![Project Reports](screenshots/project-reports.png)
+
+## Architecture
+
+```text
+frontend/  React + Vite + TypeScript + Tailwind
+backend/   Node.js + Express + TypeScript + SQL Server
+           server-authoritative scheduling and REST API
+backend/sql/ forward-only SQL Server migrations
+```
+
+The frontend treats the Gantt as a view over server-calculated schedule data. Task mutations are sent to the API, persisted, recalculated, and rendered again from the server response.
+
+## Local setup
+
+### Backend
 
 ```powershell
 cd backend
-copy .env.example .env     # fill DB_SERVER, DB_USER, DB_PASSWORD, JWT_SECRET
+copy .env.example .env
 npm install
-npm run migrate            # applies sql/*.sql in order
-npm run dev                # tsx watch src/server.ts (port 4000)
-npm test                   # vitest run (no live DB required)
+npm run migrate
+npm run dev
 ```
 
-Health: `GET /health` (liveness), `GET /readyz` (503 until the DB pool responds).
+Fill `DB_SERVER`, `DB_USER`, `DB_PASSWORD`, and `JWT_SECRET` in `.env`.
 
-## Frontend setup
+### Frontend
 
 ```powershell
 cd frontend
+copy .env.example .env
 npm install
-npm run dev                # Vite on http://localhost:5174
+npm run dev
 ```
 
-Vite dev server proxies `/api` to the backend at `http://localhost:4000`.
+Set `VITE_APP_NAME=ZodGantt` and leave `VITE_API_BASE_URL` empty when using the Vite proxy. The frontend runs on `http://localhost:5174`; the API runs on port `4000`.
 
-## HRIS integration boundary
+## Validation
 
-The people directory comes from HRIS (HRIS_PORTAL, DB `CORP_DB`, table `dbo.hris_worker`). Access is
-**read-only** and goes through the `EmployeeProvider` adapter only — no service queries HRIS
-directly, and the `pm` schema holds **no foreign key** to `hris_worker`. See
-[docs/employee-integration.md](docs/employee-integration.md).
+```powershell
+npm run typecheck
+npm test
+npm run build
+```
+
+## Project structure
+
+- `frontend/` - React application and product UI
+- `backend/` - Express API, business logic, authorization, and database access
+- `backend/sql/` - database migrations
+- `docs/` - architecture, scheduling, database, and design documentation
+- `screenshots/` - product showcase captures
+
+## Status
+
+Active development. The core project workspace, Gantt scheduling, task completion/evidence workflow, manager approval, and project reporting are implemented.

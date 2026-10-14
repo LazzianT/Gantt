@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type KeyboardEvent } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { AlertTriangle, Loader2, Plus } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
+import { getRole } from '../../lib/auth';
 import HealthPill from '../../components/HealthPill';
 import ProgressBar from '../../components/ProgressBar';
 import Skeleton from '../../components/Skeleton';
@@ -15,6 +16,8 @@ import ResourcesTab from './ResourcesTab';
 import TeamTab from './TeamTab';
 import MilestonesTab from './MilestonesTab';
 import BaselineTab from './BaselineTab';
+import FinishReviewPanel from './FinishReviewPanel';
+import ReportsTab from './ReportsTab';
 
 interface ProjectDetail {
   id: number;
@@ -57,11 +60,15 @@ export default function WorkspacePage() {
   const [params, setParams] = useSearchParams();
   const rawTab = params.get('tab');
   const tab: TabKey = (TABS.some((t) => t.key === rawTab) ? rawTab : 'overview') as TabKey;
+  // Server enforces this too; the client copy only avoids rendering a panel that would 403.
+  const canReviewFinishDates = getRole() === 'admin' || getRole() === 'manager';
 
   const [project, setProject] = useState<ProjectDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [addToken, setAddToken] = useState(0);
+  // Bumped after a manager decides an actual finish date so the task grid re-reads the tree.
+  const [reviewToken, setReviewToken] = useState(0);
   const [baseline, setBaseline] = useState<{ busy: boolean; message: string | null }>({
     busy: false,
     message: null,
@@ -240,14 +247,25 @@ export default function WorkspacePage() {
             <ConfirmProvider>
               {tab === 'overview' && <OverviewTab projectId={projectId} />}
               {tab === 'tasks' && (
-                <TaskGrid projectId={projectId} addToken={addToken} onAddConsumed={() => setAddToken(0)} />
+                <div className="space-y-4">
+                  {canReviewFinishDates && (
+                    <FinishReviewPanel projectId={projectId} onReviewed={() => setReviewToken((n) => n + 1)} />
+                  )}
+                  <TaskGrid
+                    key={`tasks-${reviewToken}`}
+                    projectId={projectId}
+                    addToken={addToken}
+                    onAddConsumed={() => setAddToken(0)}
+                  />
+                </div>
               )}
               {tab === 'gantt' && <GanttView projectId={projectId} />}
               {tab === 'resources' && <ResourcesTab projectId={projectId} />}
               {tab === 'team' && <TeamTab projectId={projectId} />}
               {tab === 'milestones' && <MilestonesTab projectId={projectId} />}
               {tab === 'baseline' && <BaselineTab projectId={projectId} />}
-              {PLACEHOLDERS[tab] && (
+              {tab === 'reports' && <ReportsTab projectId={projectId} />}
+              {PLACEHOLDERS[tab] && tab !== 'reports' && (
                 <PlaceholderPanel title={PLACEHOLDERS[active.key].title} note={PLACEHOLDERS[active.key].note} />
               )}
             </ConfirmProvider>

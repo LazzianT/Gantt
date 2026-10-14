@@ -61,7 +61,7 @@ Auth: NIP + Tanggal Lahir validated against read-only HRIS via `EmployeeProvider
 - `dependencies`, `milestones`, `progress`, `activity` return raw `snake_case` rows —
   latent DTO drift.
 - Gantt time axis assumes the default Mon–Fri calendar; no calendar endpoint yet.
-- Reports tab is a placeholder.
+- Reports tab now provides schedule variance, delay analysis, evidence/approval audit, and browser print/PDF.
 - No runtime screenshot / browser verification.
 - Doc-vs-schema naming drift partially unresolved.
 

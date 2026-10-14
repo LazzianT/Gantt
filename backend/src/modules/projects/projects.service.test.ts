@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Exec, ProjectRow } from "./projects.repository.js";
-import { addMember, createProject, listProjects, nextProjectCode, weightedProgress } from "./projects.service.js";
+import { addMember, createProject, ensureMember, listProjects, nextProjectCode, weightedProgress } from "./projects.service.js";
 
 vi.mock("./projects.repository.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./projects.repository.js")>();
@@ -9,6 +9,7 @@ vi.mock("./projects.repository.js", async (importOriginal) => {
     codeExists: vi.fn(),
     codesWithPrefix: vi.fn(),
     createProject: vi.fn(),
+    ensureMember: vi.fn(),
     getProject: vi.fn(),
     updateProject: vi.fn(),
     softDeleteProject: vi.fn(),
@@ -26,6 +27,7 @@ const codeExists = vi.mocked(repo.codeExists);
 const createRepo = vi.mocked(repo.createProject);
 const listRepo = vi.mocked(repo.listProjects);
 const addRepo = vi.mocked(repo.addMember);
+const ensureRepo = vi.mocked(repo.ensureMember);
 
 function projectRow(overrides: Partial<ProjectRow> = {}): ProjectRow {
   return {
@@ -108,5 +110,16 @@ describe("projects.service", () => {
       /employee_nip is required/,
     );
     expect(addRepo).not.toHaveBeenCalled();
+  });
+
+  it("ensureMember skips a blank nip without touching the repo", async () => {
+    await expect(ensureMember(exec, 7, "  ", "Jane")).resolves.toBe(false);
+    expect(ensureRepo).not.toHaveBeenCalled();
+  });
+
+  it("ensureMember trims the nip and falls back to the nip for a missing name", async () => {
+    ensureRepo.mockResolvedValue(true);
+    await expect(ensureMember(exec, 7, " 1001 ", "  ")).resolves.toBe(true);
+    expect(ensureRepo).toHaveBeenCalledWith(exec, 7, { employee_nip: "1001", employee_name: "1001" });
   });
 });

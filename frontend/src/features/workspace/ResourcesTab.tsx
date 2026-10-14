@@ -3,6 +3,7 @@ import { Loader2, Plus, Trash2, X } from 'lucide-react';
 import Skeleton from '../../components/Skeleton';
 import { useConfirm } from '../../components/ConfirmDialog';
 import { useToast } from '../../components/Toast';
+import { canManageProjects } from '../../lib/auth';
 import EmployeeSearch from './EmployeeSearch';
 import WorkloadView from './WorkloadView';
 import { EmptyState, ErrorBanner, TabToolbar, errorText, useAsync } from './common';
@@ -27,6 +28,7 @@ export default function ResourcesTab({ projectId }: { projectId: number }) {
   const [pendingId, setPendingId] = useState<number | null>(null);
 
   const resources = data ?? [];
+  const canManage = canManageProjects();
 
   async function remove(resource: ProjectResource) {
     const ok = await confirm({
@@ -59,7 +61,7 @@ export default function ResourcesTab({ projectId }: { projectId: number }) {
             Workload
           </SegButton>
         </div>
-        {view === 'list' && (
+        {view === 'list' && canManage && (
           <button type="button" className="btn-primary ml-auto h-8 gap-1" onClick={() => setAdding((value) => !value)}>
             <Plus size={15} />
             Add resource
@@ -73,8 +75,8 @@ export default function ResourcesTab({ projectId }: { projectId: number }) {
         <div className="min-h-0 flex-1 overflow-auto">
           {error && <ErrorBanner message={error} onRetry={() => void reload(true)} />}
 
-          {adding && (
-            <ResourceForm
+           {canManage && adding && (
+             <ResourceForm
               projectId={projectId}
               onCancel={() => setAdding(false)}
               onSaved={() => {
@@ -90,12 +92,14 @@ export default function ResourcesTab({ projectId }: { projectId: number }) {
             <EmptyState
               title="No resources yet"
               description="Add people or equipment to plan capacity and track workload."
-              action={
+             action={
+               canManage ? (
                 <button type="button" className="btn-primary gap-1" onClick={() => setAdding(true)}>
                   <Plus size={15} />
                   Add resource
                 </button>
-              }
+              ) : undefined
+             }
             />
           ) : (
             <table className="w-full min-w-[720px] border-collapse text-sm">
@@ -122,8 +126,8 @@ export default function ResourcesTab({ projectId }: { projectId: number }) {
                     <td className="px-3 py-2 text-xs tabular text-ink-muted">{resource.employeeNip ?? '—'}</td>
                     <td className="px-3 py-2 text-xs text-ink-secondary">{resource.departmentName ?? '—'}</td>
                     <td className="px-3 py-2 text-right text-xs tabular text-ink-secondary">{resource.maxUnits}</td>
-                    <td className="px-3 py-2 text-right">
-                      <button
+                     <td className="px-3 py-2 text-right">
+                       {canManage && <button
                         type="button"
                         aria-label={`Remove ${resource.name}`}
                         disabled={pendingId === resource.id}
@@ -135,8 +139,8 @@ export default function ResourcesTab({ projectId }: { projectId: number }) {
                         ) : (
                           <Trash2 size={15} />
                         )}
-                      </button>
-                    </td>
+                       </button>}
+                     </td>
                   </tr>
                 ))}
               </tbody>

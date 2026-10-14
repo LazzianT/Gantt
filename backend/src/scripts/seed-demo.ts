@@ -1,5 +1,6 @@
 import { closePool } from "../config/database.js";
 import { getPool, query, sql } from "../db/pool.js";
+import { hrisObject } from "../modules/employees/hris-adapter.js";
 import { create as createTask, type TaskType } from "../modules/tasks/tasks.repository.js";
 import { create as createDependency } from "../modules/dependencies/dependencies.repository.js";
 import { addProjectResource, assignTaskResource } from "../modules/resources/resources.repository.js";
@@ -89,10 +90,10 @@ async function main(): Promise<void> {
   }
 
   const employees = await query<{ NIP: string; Name: string }>(
-    `SELECT TOP 3 NIP, RTRIM(Name) AS Name FROM CORP_DB.dbo.hris_worker WHERE is_Active='1' ORDER BY Name`,
+    `SELECT TOP 3 NIP, RTRIM(Name) AS Name FROM ${hrisObject("hris_Employee")} WHERE is_Active='1' ORDER BY Name`,
   );
   if (employees.length === 0) {
-    console.error("ABORT: no active employees found in CORP_DB.dbo.hris_worker (is_Active='1').");
+    console.error(`ABORT: no active employees found in ${hrisObject("hris_Employee")} (is_Active='1').`);
     process.exitCode = 1;
     return;
   }

@@ -1,4 +1,4 @@
-import type { Health, ProjectStatus } from "../projects/projects.repository.js";
+﻿import type { Health, ProjectStatus } from "../projects/projects.repository.js";
 
 /** Parameterized query runner; `query` from db/pool satisfies this. */
 export type Exec = (sql: string, params?: Record<string, unknown>) => Promise<any[]>;
@@ -147,6 +147,8 @@ export interface MyTaskRow {
   status: string;
   progress_percent: number;
   is_critical: boolean;
+  actual_finish: Date | string | null;
+  actual_finish_status: "Pending" | "Approved" | "Rejected" | null;
 }
 
 export interface GlobalMilestoneRow {
@@ -376,20 +378,33 @@ export async function globalRecentActivity(
 export async function myTasks(exec: Exec, employeeNip: string, limit = DEFAULT_LIMIT): Promise<MyTaskRow[]> {
   return exec(
     `SELECT TOP (@limit) t.task_id, t.name, t.project_id, p.name AS project_name,
-            t.finish_date, t.status, t.progress_percent, t.is_critical
+            t.finish_date, t.status, t.progress_percent, t.is_critical,
+            t.actual_finish, t.actual_finish_status
      FROM pm.project_tasks t
      JOIN pm.projects p ON p.project_id = t.project_id
-     WHERE t.is_deleted = 0 AND p.is_deleted = 0
-       AND EXISTS (
-         SELECT 1
-         FROM pm.task_resources tr
-         JOIN pm.project_resources pr ON pr.resource_id = tr.resource_id
-         WHERE tr.task_id = t.task_id AND pr.employee_nip = @employeeNip AND pr.is_deleted = 0
-       )
+     WHERE t.is_deleted = 0 AND p.is_deleted = 0 AND t.pic_nip = @employeeNip
      ORDER BY CASE WHEN t.finish_date IS NULL THEN 1 ELSE 0 END, t.finish_date ASC, t.task_id ASC`,
     { employeeNip, limit: clampLimit(limit) },
   );
 }
+
+/**
+ * "My Tasks": every task the employee is the PIC of. Resource assignment is a separate
+ * concept and is intentionally not included here.
+ */
+export async function allMyTasks(exec: Exec, employeeNip: string): Promise<MyTaskRow[]> {
+  return exec(
+    `SELECT t.task_id, t.name, t.project_id, p.name AS project_name,
+            t.finish_date, t.status, t.progress_percent, t.is_critical,
+            t.actual_finish, t.actual_finish_status
+     FROM pm.project_tasks t
+     JOIN pm.projects p ON p.project_id = t.project_id
+     WHERE t.is_deleted = 0 AND p.is_deleted = 0 AND t.pic_nip = @employeeNip
+     ORDER BY CASE WHEN t.finish_date IS NULL THEN 1 ELSE 0 END, t.finish_date ASC, t.task_id ASC`,
+    { employeeNip },
+  );
+}
+
 
 export async function globalUpcomingMilestones(
   exec: Exec,

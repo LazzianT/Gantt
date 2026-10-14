@@ -12,6 +12,7 @@ import {
   X,
 } from 'lucide-react';
 import { clearToken, decodeToken, getToken } from '../lib/auth';
+import { APP_NAME } from '../config/app';
 import { LogoLockup, LogoMark } from '../components/Logo';
 import PageTransition from './PageTransition';
 import Topbar from './Topbar';
@@ -84,8 +85,8 @@ export default function AppShell() {
             {!isCollapsed && <span className="truncate">New project</span>}
           </button>
         )}
-        <PlaceholderItem icon={<CheckSquare size={18} />} label="My Tasks" collapsed={isCollapsed} />
-        <PlaceholderItem icon={<BarChart3 size={18} />} label="Reports" collapsed={isCollapsed} />
+        <NavItem to="/my-tasks" icon={<CheckSquare size={18} />} label="My Tasks" collapsed={isCollapsed} />
+        <NavItem to="/reports" icon={<BarChart3 size={18} />} label="Reports" collapsed={isCollapsed} />
 
         <SectionLabel collapsed={isCollapsed}>People</SectionLabel>
         <PlaceholderItem icon={<Users size={18} />} label="Directory" collapsed={isCollapsed} />
@@ -171,7 +172,7 @@ function Brand({ collapsed }: { collapsed: boolean }) {
       className={`flex h-14 shrink-0 items-center gap-2 border-b border-line-hairline text-ink ${
         collapsed ? 'justify-center px-2' : 'px-4'
       }`}
-      aria-label="Project Management home"
+      aria-label={`${APP_NAME} home`}
     >
       {collapsed ? (
         <LogoMark size={24} className="shrink-0" />

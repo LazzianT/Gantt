@@ -45,6 +45,7 @@ export interface GanttRow {
 export interface AxisDay {
   date: string;
   isWorking: boolean;
+  isWeekend: boolean;
   left: number;
   width: number;
 }
@@ -69,6 +70,8 @@ export interface Axis {
   widthAt: (iso: string) => number;
   pxPerWorkingDay: number;
   dateForX: (x: number) => string;
+  workingIndex: (iso: string) => number;
+  workingDateAt: (index: number) => string;
 }
 
 export interface BarBox {
@@ -216,8 +219,9 @@ export function buildAxis(
   for (let d = start; d.getTime() <= end.getTime(); d = addDays(d, 1)) {
     const iso = toISO(d);
     const working = isWorkingDay(d, cal);
+    const weekend = d.getUTCDay() === 0 || d.getUTCDay() === 6;
     const width = compressed ? (working ? dayWidth : 0) : dayWidth;
-    const cell: AxisDay = { date: iso, isWorking: working, left: cursor, width };
+    const cell: AxisDay = { date: iso, isWorking: working, isWeekend: weekend, left: cursor, width };
     days.push(cell);
     byDate.set(iso, cell);
     cursor += width;
@@ -252,6 +256,33 @@ export function buildAxis(
     return nearest.date;
   };
 
+  // Working-day ordinal helpers, used to translate a bar by a whole number of working days so its
+  // duration is preserved (start and finish shift together).
+  const workingDays = days.filter((d) => d.isWorking);
+  const workingIndexOf = new Map<string, number>();
+  workingDays.forEach((day, i) => workingIndexOf.set(day.date, i));
+  const workingIndex = (iso: string): number => {
+    const key = iso.slice(0, 10);
+    const exact = workingIndexOf.get(key);
+    if (exact != null) return exact;
+    const target = parseISO(key).getTime();
+    let best = 0;
+    let bestDist = Infinity;
+    workingDays.forEach((day, i) => {
+      const dist = Math.abs(parseISO(day.date).getTime() - target);
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = i;
+      }
+    });
+    return best;
+  };
+  const workingDateAt = (index: number): string => {
+    if (workingDays.length === 0) return startIso;
+    const clamped = Math.max(0, Math.min(workingDays.length - 1, index));
+    return workingDays[clamped].date;
+  };
+
   return {
     days,
     fine: groupDays(days, scale, 'fine'),
@@ -267,6 +298,8 @@ export function buildAxis(
     // (working-days) mode — the default. Switch to counting calendar days between dates if expanded resize matters.
     pxPerWorkingDay: dayWidth,
     dateForX,
+    workingIndex,
+    workingDateAt,
   };
 }
 
@@ -274,15 +307,30 @@ function subtreeSpan(
   node: TaskNode,
   sched: Map<number, ScheduleTask>,
 ): { start: string | null; finish: string | null } {
-  const scheduled = sched.get(node.id);
-  let start = scheduled?.esDate ?? node.esDate ?? node.startDate;
-  let finish = scheduled?.efDate ?? node.efDate ?? node.finishDate;
-  for (const child of node.children ?? []) {
-    const span = subtreeSpan(child, sched);
-    if (span.start && (!start || span.start < start)) start = span.start;
-    if (span.finish && (!finish || span.finish > finish)) finish = span.finish;
+  const ownSpan = (): { start: string | null; finish: string | null } => {
+    const scheduled = sched.get(node.id);
+    return {
+      start: scheduled?.esDate ?? node.esDate ?? node.startDate,
+      finish: scheduled?.efDate ?? node.efDate ?? node.finishDate,
+    };
+  };
+
+  // A container's timeframe is the envelope of its subtasks, so the summary bracket
+  // shrinks/expands automatically as children move — its own stored dates are ignored.
+  const children = node.children ?? [];
+  if (children.length > 0) {
+    let start: string | null = null;
+    let finish: string | null = null;
+    for (const child of children) {
+      const span = subtreeSpan(child, sched);
+      if (span.start && (!start || span.start < start)) start = span.start;
+      if (span.finish && (!finish || span.finish > finish)) finish = span.finish;
+    }
+    if (start && finish) return { start, finish };
+    return ownSpan();
   }
-  return { start, finish };
+
+  return ownSpan();
 }
 
 function isMilestoneNode(node: TaskNode): boolean {
@@ -303,7 +351,10 @@ function buildRows(
       const scheduled = sched.get(node.id);
       if (span.start && span.finish) {
         const milestone = isMilestoneNode(node);
-        const type: GanttRow['type'] = milestone ? 'Milestone' : node.taskType === 'Summary' ? 'Summary' : 'Task';
+        // Any node that owns children is a container: render it as a summary bracket and keep it
+        // out of drag/resize. Only leaf tasks and milestones stay directly editable.
+        const container = hasChildren || node.taskType === 'Summary';
+        const type: GanttRow['type'] = milestone ? 'Milestone' : container ? 'Summary' : 'Task';
         rows.push({
           id: node.id,
           parentId: node.parentTaskId,

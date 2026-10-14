@@ -78,7 +78,7 @@ export function getDependencies(projectId: number): Promise<Dependency[]> {
 
 export function patchTask(
   id: number,
-  patch: { start_date?: string; duration_days?: number },
+  patch: { start_date?: string; finish_date?: string; duration_days?: number },
 ): Promise<unknown> {
   return api(`/tasks/${id}`, { method: 'PATCH', body: patch });
 }

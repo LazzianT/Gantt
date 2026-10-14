@@ -45,7 +45,7 @@ export function resolveRole(nip: string, jobLevel?: string | null): Role {
   if (env.auth.adminNips.includes(nip)) return "admin";
   if (env.auth.managerNips.includes(nip)) return "manager";
   if (jobLevel) {
-    if (/BOARD|DIRECTOR/i.test(jobLevel)) return "admin";
+    if (/BOARD|DIRECTOR|DIREKTUR/i.test(jobLevel)) return "admin";
     if (/MANAGER|HEAD|CHIEF|GM/i.test(jobLevel)) return "manager";
   }
   return "member";

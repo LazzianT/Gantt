@@ -116,6 +116,38 @@
   }
 }
 
+@media print {
+  body * {
+    visibility: hidden !important;
+  }
+
+  .reports-print-area,
+  .reports-print-area * {
+    visibility: visible !important;
+  }
+
+  .reports-print-area {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    overflow: visible !important;
+    background: white;
+  }
+
+  .reports-print-area table {
+    min-width: 0 !important;
+  }
+
+  .reports-print-area section,
+  .reports-print-area > div {
+    break-inside: avoid;
+  }
+
+  .print\\:hidden {
+    display: none !important;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { APP_NAME } from '../../config/app';
 import {
   Activity,
   ArrowRight,
@@ -84,14 +85,14 @@ export default function LoginPage() {
           <div className="mb-8 flex items-center gap-2.5 lg:hidden">
             <LogoMark size={30} />
             <span className="font-semibold tracking-tight text-[#0F172A]">
-              Project Management
+{APP_NAME}
             </span>
           </div>
 
           <form onSubmit={onSubmit} noValidate aria-busy={submitting}>
             <h1 className="text-[32px] font-bold text-[#0F172A]">Sign in</h1>
             <p className="mt-1.5 text-sm text-[#5B6B79]">
-              Use your employee ID to continue to Project Management.
+              Use your employee ID to continue to {APP_NAME}.
             </p>
 
             <div className="mt-7 space-y-4">
@@ -218,7 +219,7 @@ export default function LoginPage() {
           </form>
 
           <footer className="mt-6 text-center text-xs text-[#9AA7B3]">
-            Project Management · v{__APP_VERSION__}
+            {APP_NAME} · v{__APP_VERSION__}
           </footer>
         </div>
       </section>
@@ -291,7 +292,7 @@ function ProductCarousel() {
 
       <div className="relative flex items-center gap-2.5">
         <LogoMark size={30} />
-        <span className="font-semibold tracking-tight text-[#0F172A]">Project Management</span>
+        <span className="font-semibold tracking-tight text-[#0F172A]">{APP_NAME}</span>
       </div>
 
       <div

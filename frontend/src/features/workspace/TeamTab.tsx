@@ -3,6 +3,7 @@ import { Loader2, Plus, Trash2, X } from 'lucide-react';
 import Skeleton from '../../components/Skeleton';
 import { useConfirm } from '../../components/ConfirmDialog';
 import { useToast } from '../../components/Toast';
+import { canManageProjects } from '../../lib/auth';
 import EmployeeSearch from './EmployeeSearch';
 import { EmptyState, ErrorBanner, TabToolbar, errorText, useAsync } from './common';
 import {
@@ -22,6 +23,7 @@ export default function TeamTab({ projectId }: { projectId: number }) {
   const [pendingId, setPendingId] = useState<number | null>(null);
 
   const members = data ?? [];
+  const canManage = canManageProjects();
 
   async function remove(member: ProjectMember) {
     const ok = await confirm({
@@ -47,17 +49,19 @@ export default function TeamTab({ projectId }: { projectId: number }) {
     <div className="flex min-h-0 flex-col">
       <TabToolbar>
         <p className="text-sm font-semibold text-ink">Project members</p>
-        <button type="button" className="btn-primary ml-auto h-8 gap-1" onClick={() => setAdding((value) => !value)}>
-          <Plus size={15} />
-          Add member
-        </button>
+        {canManage && (
+          <button type="button" className="btn-primary ml-auto h-8 gap-1" onClick={() => setAdding((value) => !value)}>
+            <Plus size={15} />
+            Add member
+          </button>
+        )}
       </TabToolbar>
 
       <div className="min-h-0 flex-1 overflow-auto">
         {error && <ErrorBanner message={error} onRetry={() => void reload(true)} />}
 
-        {adding && (
-          <MemberForm
+         {canManage && adding && (
+           <MemberForm
             projectId={projectId}
             onCancel={() => setAdding(false)}
             onSaved={() => {
@@ -101,15 +105,17 @@ export default function TeamTab({ projectId }: { projectId: number }) {
                   <td className="px-3 py-2 text-xs tabular text-ink-secondary">{Math.round(member.allocationPercent)}%</td>
                   <td className="px-3 py-2 text-xs tabular text-ink-muted">{member.employeeNip}</td>
                   <td className="px-3 py-2 text-right">
-                    <button
-                      type="button"
-                      aria-label={`Remove ${member.employeeName}`}
-                      disabled={pendingId === member.id}
-                      onClick={() => void remove(member)}
-                      className="flex h-7 w-7 items-center justify-center rounded-sm text-ink-muted hover:bg-[#FEE2E2] hover:text-[#B91C1C] focus-visible:outline-none focus-visible:shadow-focus disabled:pointer-events-none disabled:opacity-50"
-                    >
-                      {pendingId === member.id ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}
-                    </button>
+                    {canManage && (
+                      <button
+                        type="button"
+                        aria-label={`Remove ${member.employeeName}`}
+                        disabled={pendingId === member.id}
+                        onClick={() => void remove(member)}
+                        className="flex h-7 w-7 items-center justify-center rounded-sm text-ink-muted hover:bg-[#FEE2E2] hover:text-[#B91C1C] focus-visible:outline-none focus-visible:shadow-focus disabled:pointer-events-none disabled:opacity-50"
+                      >
+                        {pendingId === member.id ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}

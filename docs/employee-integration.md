@@ -1,6 +1,8 @@
 # Employee Integration
 
-Project Management depends on a people directory. HRIS (HRIS_PORTAL, DB `CORP_DB`, table `dbo.hris_worker`) is the source of truth. The PM app never queries HRIS SQL directly from a service. It depends on an interface. One adapter implements it.
+Project Management depends on a people directory. HRIS (HRIS_PORTAL, table `dbo.hris_Employee`) is the source of truth. The PM app never queries HRIS SQL directly from a service. It depends on an interface. One adapter implements it.
+
+The HRIS database is **not hardcoded**: every statement is DB-qualified with `DB_DATABASE` from `.env` (`env.db.database`), so the same adapter works against whatever database the deployment points at.
 
 ## 1. Boundary diagram
 
@@ -26,8 +28,8 @@ Project Management depends on a people directory. HRIS (HRIS_PORTAL, DB `CORP_DB
                                                        |
                                                        v
                                         +-----------------------------+
-                                        |  CORP_DB.dbo.hris_worker    |
-                                        |  + hris_cost_center         |
+                                        |  <DB>.dbo.hris_Employee     |
+                                        |  + MASCOSTCENTER            |
                                         |  + career path / jobtitle   |
                                         |  (READ ONLY)                |
                                         +-----------------------------+
@@ -83,19 +85,19 @@ export interface EmployeeDTO {
 
 | DTO field | Source | Rule |
 |-----------|--------|------|
-| `nip` | `hris_worker.NIP` | full value, trimmed. Never `RIGHT(NIP,4)`. |
-| `name` | `hris_worker.Name` | `RTRIM`. |
-| `departmentId` | `hris_worker.DepartID` | as is, nullable. |
-| `departmentName` | `hris_cost_center.NamaDepartemen` | `ISNULL(...,'-')`. |
-| `position` | `hris_job_title` via `hris_worker_career` | active row `is_Archive='0'`. |
-| `email` | `hris_worker.Email` | trimmed, nullable. |
-| `phone` | `hris_worker.Phone` | trimmed, nullable. |
-| `active` | `hris_worker.is_Active` | `'1'` -> true. |
-| `gender` | `hris_worker.Gender` | `'L'`/`'P'` else null. |
-| `employeeStatus` | `hris_worker.EmployeeStatus` | `'P'` -> Permanent, else Contract. |
+| `nip` | `hris_Employee.NIP` | full value, trimmed. Never `RIGHT(NIP,4)`. |
+| `name` | `hris_Employee.Name` | `RTRIM`. |
+| `departmentId` | `hris_Employee.DepartID` | as is, nullable. |
+| `departmentName` | `MASCOSTCENTER.NamaDepartemen` | `ISNULL(...,'-')`. |
+| `position` | `hris_Jobtitle` via `hris_EmployeeCareerPath` | active row `is_Archive='0'`. |
+| `email` | `hris_Employee.Email` | trimmed, nullable. |
+| `phone` | `hris_Employee.Phone` | trimmed, nullable. |
+| `active` | `hris_Employee.is_Active` | `'1'` -> true. |
+| `gender` | `hris_Employee.Gender` | `'L'`/`'P'` else null. |
+| `employeeStatus` | `hris_Employee.EmployeeStatus` | `'P'` -> Permanent, else Contract. |
 | `joinDate` | `WorkingDate` fallback `FirstWorkingDate` | ISO `YYYY-MM-DD`. |
 
-Position resolution (active row): career path `is_Archive='0'` joins `hris_job_title.Id_Jobtitle`. If several active rows exist, pick the one with the greatest job level, then greatest id.
+Position resolution (active row): career path `is_Archive='0'` joins `hris_Jobtitle.Id_Jobtitle`. If several active rows exist, pick the one with the greatest job level, then greatest id.
 
 ## 5. `HrisEmployeeAdapter` responsibilities
 
@@ -113,8 +115,8 @@ SELECT TOP (@limit)
     a.NIP,
     RTRIM(a.Name) AS Name,
     ISNULL(m.NamaDepartemen, '-') AS Department
-FROM CORP_DB.dbo.hris_worker a
-LEFT JOIN CORP_DB.dbo.hris_cost_center m ON a.DepartID = m.DepartID
+FROM <DB>.dbo.hris_Employee a
+LEFT JOIN <DB>.dbo.MASCOSTCENTER m ON a.DepartID = m.DepartID
 WHERE a.is_Active = '1'
   AND (a.Name LIKE @like OR a.NIP LIKE @like)
 ORDER BY a.Name;
@@ -139,11 +141,11 @@ SELECT
     a.FirstWorkingDate,
     jt.Id_Jobtitle,
     jt.Joblevel
-FROM CORP_DB.dbo.hris_worker a
-LEFT JOIN CORP_DB.dbo.hris_cost_center m ON a.DepartID = m.DepartID
-LEFT JOIN CORP_DB.dbo.hris_worker_career cp
+FROM <DB>.dbo.hris_Employee a
+LEFT JOIN <DB>.dbo.MASCOSTCENTER m ON a.DepartID = m.DepartID
+LEFT JOIN <DB>.dbo.hris_EmployeeCareerPath cp
        ON cp.NIP = a.NIP AND cp.is_Archive = '0'
-LEFT JOIN CORP_DB.dbo.hris_job_title jt ON jt.Id_Jobtitle = cp.Id_Jobtitle
+LEFT JOIN <DB>.dbo.hris_Jobtitle jt ON jt.Id_Jobtitle = cp.Id_Jobtitle
 WHERE a.NIP = @nip
 ORDER BY jt.Joblevel DESC, jt.Id_Jobtitle DESC;
 ```
@@ -163,8 +165,8 @@ SELECT
     a.Gender,
     a.EmployeeStatus,
     a.WorkingDate
-FROM CORP_DB.dbo.hris_worker a
-LEFT JOIN CORP_DB.dbo.hris_cost_center m ON a.DepartID = m.DepartID
+FROM <DB>.dbo.hris_Employee a
+LEFT JOIN <DB>.dbo.MASCOSTCENTER m ON a.DepartID = m.DepartID
 WHERE a.is_Active = '1'
 ORDER BY a.Name
 OFFSET (@page - 1) * @pageSize ROWS
@@ -209,7 +211,7 @@ Degradation is explicit, never silent. The API exposes whether data is `stale`.
 
 ## 9. Security
 
-- SELECT-only. The DB user (`DB_USER`) has no DML rights on `hris_worker` or its joins.
+- SELECT-only. The DB user (`DB_USER`) has no DML rights on `hris_Employee` or its joins.
 - Least privilege: grant on the specific tables/views the adapter reads.
 - No HRIS PII beyond what the DTO needs. Sensitive fields (`NIK`, `NRIC`, `NPWP`, `BPJSTK`, `BPJSKS`) are never selected by this adapter.
 - No secrets in code or docs. Connection info from env.
@@ -220,8 +222,8 @@ Degradation is explicit, never silent. The API exposes whether data is `stale`.
 
 | Var | Purpose | Default |
 |-----|---------|---------|
-| `DB_SERVER` | CORP_DB host | none |
-| `DB_DATABASE` | `CORP_DB` | `CORP_DB` |
+| `DB_SERVER` | HRIS host | none |
+| `DB_DATABASE` | database qualified on every HRIS statement (also holds the `pm` schema) | `CORP_DB` |
 | `DB_USER` | read-mostly account | none |
 | `DB_PASSWORD` | secret | none |
 | `DB_ENCRYPT` | TLS | `true` |

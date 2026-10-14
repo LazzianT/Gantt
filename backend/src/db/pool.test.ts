@@ -20,6 +20,9 @@ const EXPECTED_ORDER = [
   "012_indexes.sql",
   "013_seed_default_calendar.sql",
   "014_project_task_pic.sql",
+  "015_task_evidence.sql",
+  "016_task_actual_dates.sql",
+  "017_actual_finish_approval.sql",
 ] as const;
 
 function migrationFiles(): string[] {
@@ -30,7 +33,7 @@ function migrationFiles(): string[] {
 }
 
 describe("sql migrations", () => {
-  it("has exactly the 14 documented migrations", () => {
+  it("has exactly the 17 documented migrations", () => {
     expect(migrationFiles()).toEqual([...EXPECTED_ORDER]);
   });
 

@@ -28,6 +28,8 @@ export interface RecentUpdate {
   created_at: string;
 }
 
+export type ActualFinishStatus = 'Pending' | 'Approved' | 'Rejected';
+
 export interface MyTask {
   task_id: number;
   name: string;
@@ -37,6 +39,8 @@ export interface MyTask {
   status: string;
   progress_percent: number;
   is_critical: boolean;
+  actual_finish: string | null;
+  actual_finish_status: ActualFinishStatus | null;
 }
 
 export interface UpcomingMilestone {
@@ -67,6 +71,20 @@ export interface DashboardData {
   projects: DashboardProject[];
 }
 
+export interface MyTasksData {
+  tasks: MyTask[];
+  summary: {
+    total: number;
+    open: number;
+    overdue: number;
+    critical: number;
+  };
+}
+
 export function getDashboard(): Promise<DashboardData> {
   return api<DashboardData>('/dashboard');
+}
+
+export function getMyTasks(): Promise<MyTasksData> {
+  return api<MyTasksData>('/dashboard/my-tasks');
 }

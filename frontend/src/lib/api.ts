@@ -60,3 +60,24 @@ export async function api<T>(path: string, options: ApiOptions = {}): Promise<T>
 
   return (payload as { data: T } | null)?.data as T;
 }
+
+/** Authenticated binary download — plain `<a href>` would omit the bearer token. */
+export async function apiBlob(path: string): Promise<Blob> {
+  const token = getToken();
+  const res = await fetch(`${BASE}${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+
+  if (res.status === 401 && token) {
+    clearToken();
+    if (window.location.pathname !== '/login') window.location.assign('/login');
+    throw new ApiError(401, 'Your session expired. Sign in again.');
+  }
+
+  if (!res.ok) {
+    const payload = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
+    throw new ApiError(res.status, payload?.error?.message ?? res.statusText);
+  }
+
+  return res.blob();
+}

@@ -6,6 +6,7 @@ import {
   globalSummary,
   globalUpcomingMilestones,
   milestoneUpcoming,
+  allMyTasks,
   myTasks,
   overdueTasks,
   portfolio,
@@ -56,6 +57,8 @@ export interface GlobalTaskItem {
   status: string;
   progress_percent: number;
   is_critical: boolean;
+  actual_finish: string | null;
+  actual_finish_status: "Pending" | "Approved" | "Rejected" | null;
 }
 
 export interface GlobalMilestoneItem {
@@ -84,6 +87,16 @@ export interface GlobalDashboard {
   my_tasks: GlobalTaskItem[];
   upcoming_milestones: GlobalMilestoneItem[];
   projects: GlobalProjectItem[];
+}
+
+export interface MyTasksDashboard {
+  tasks: GlobalTaskItem[];
+  summary: {
+    total: number;
+    open: number;
+    overdue: number;
+    critical: number;
+  };
 }
 
 export interface PortfolioItem {
@@ -145,6 +158,14 @@ function isoDate(value: unknown): string | null {
   if (value == null) return null;
   if (value instanceof Date) return value.toISOString().slice(0, 10);
   return String(value).slice(0, 10);
+}
+
+/** Server-local calendar day. Overdue is a business-day comparison, so UTC would misclassify tasks near midnight. */
+function todayIso(now = new Date()): string {
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 /** Whole-day difference; positive means `current` finishes later than `baseline` (a slip). */
@@ -297,6 +318,8 @@ function toGlobalTask(row: MyTaskRow): GlobalTaskItem {
     status: row.status,
     progress_percent: num(row.progress_percent),
     is_critical: Boolean(row.is_critical),
+    actual_finish: isoDate(row.actual_finish),
+    actual_finish_status: row.actual_finish_status ?? null,
   };
 }
 
@@ -324,6 +347,23 @@ function toGlobalProject(row: GlobalProjectRow): GlobalProjectItem {
 }
 
 const GLOBAL_SEE_ALL_ROLES = new Set(["admin", "manager"]);
+
+export async function getMyTasksDashboard(exec: Exec, user: GlobalDashboardUser): Promise<MyTasksDashboard> {
+  const rows = await allMyTasks(exec, user.sub);
+  const today = todayIso();
+  const tasks = rows.map(toGlobalTask);
+  return {
+    tasks,
+    summary: {
+      total: tasks.length,
+      open: tasks.filter((task) => task.status !== "Completed").length,
+      overdue: tasks.filter(
+        (task) => task.status !== "Completed" && task.finish_date != null && task.finish_date < today,
+      ).length,
+      critical: tasks.filter((task) => task.is_critical).length,
+    },
+  };
+}
 
 export async function getGlobalDashboard(exec: Exec, user: GlobalDashboardUser): Promise<GlobalDashboard> {
   const scope = { nip: user.sub, seeAll: GLOBAL_SEE_ALL_ROLES.has(user.role.toLowerCase()) };

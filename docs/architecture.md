@@ -189,6 +189,14 @@ All paths under `/api/v1`. Envelope: success `{data}` (200/201), failure `{error
 | POST | `/baselines/:id/activate` | Set active baseline | Yes |
 | GET | `/projects/:id/progress` | Progress history | Yes |
 | POST | `/tasks/:id/progress` | Report progress | Yes |
+| GET | `/dashboard/my-tasks` | My Tasks list (tasks where `pic_nip` = session NIP) + summary | Yes |
+| PATCH | `/tasks/:id/completion` | My Tasks: mark done with `actual_finish`, or reopen | PIC only (`admin`/`manager` bypass) |
+| POST | `/tasks/:id/actual-finish/review` | Manager decision on a submitted finish date | `admin`/`manager` |
+| GET | `/projects/:projectId/actual-finish-reviews` | Manager queue of submitted finish dates | `admin`/`manager` |
+| GET | `/tasks/:id/evidence` | Task evidence trail | Project member |
+| POST | `/tasks/:id/evidence` | Add evidence (note and/or file, multipart); empty = no-op `200` | PIC only |
+| GET | `/evidence/:id/file` | Download evidence file (authenticated) | Project member |
+| DELETE | `/evidence/:id` | Delete own evidence | Uploader only |
 | POST | `/projects/:id/schedule` | Recalculate (server CPM) | Yes |
 | GET | `/projects/:id/schedule` | Read computed schedule | Yes |
 | GET | `/portfolio` | Portfolio read-model (health, progress, counts) | Yes |
@@ -198,7 +206,7 @@ All paths under `/api/v1`. Envelope: success `{data}` (200/201), failure `{error
 
 ## 5. JWT auth
 
-- Login is **NIP + date of birth (DOB)**. Credentials validate against the read-only HRIS directory (`CORP_DB.dbo.hris_worker`) through `EmployeeProvider` / `HrisEmployeeAdapter` (`getEmployee(nip)` + active check + date-only `BirthDate` compare). No local password store.
+- Login is **NIP + date of birth (DOB)**. Credentials validate against the read-only HRIS directory (`dbo.hris_Employee`, database `DB_DATABASE` from `.env`) through `EmployeeProvider` / `HrisEmployeeAdapter` (`getEmployee(nip)` + active check + date-only `BirthDate` compare). No local password store.
 - Endpoint: `POST /auth/login { nip, birthDate }`. Success: `201/200 { data: { token, user } }`. Failure `401` with a uniform message.
 - Token payload `{ sub: nip, name, role }`, signed HS256 with `JWT_SECRET` (env). TTL from `JWT_EXPIRES_IN` (env, default `8h`).
 - Role resolved from env allowlists at login: `AUTH_ADMIN_NIPS` → `admin`, `AUTH_MANAGER_NIPS` → `manager`, else `member`.
@@ -223,8 +231,8 @@ Only `HrisEmployeeAdapter` touches HRIS SQL. Everything above depends on the int
 +----------------------+     +--------------------+                 |
                                                                    v
                                                    +----------------------------------+
-                                                   |  CORP_DB.dbo.hris_worker         |
-                                                   |  + hris_cost_center + career/job |
+                                                   |  <DB>.dbo.hris_Employee          |
+                                                   |  + MASCOSTCENTER + career/job    |
                                                    |  (READ ONLY)                     |
                                                    +----------------------------------+
 ```
@@ -310,8 +318,8 @@ Error:
 |-----|---------|---------|-------|
 | `NODE_ENV` | backend | `development` | |
 | `PORT` | backend | `4000` | |
-| `DB_SERVER` | backend | `DB_HOST` | CORP_DB server |
-| `DB_DATABASE` | backend | `CORP_DB` | |
+| `DB_SERVER` | backend | `DB_HOST` | HRIS host |
+| `DB_DATABASE` | backend | `CORP_DB` | qualifies every HRIS statement; also holds `pm` |
 | `DB_USER` | backend | `pm_app` | least privilege |
 | `DB_PASSWORD` | backend | (secret) | never commit |
 | `DB_ENCRYPT` | backend | `true` | |
@@ -353,7 +361,7 @@ Error:
 +---------------------|--------------------|--------------------+
                       v                    v
               +--------------+     +--------------------------+
-              |  CORP_DB.pm  |     |  CORP_DB.dbo.hris_worker |
+              |  <DB>.pm     |     |  <DB>.dbo.hris_Employee  |
               |  (own schema)|     |  (read only, adapter)    |
               +--------------+     +--------------------------+
 ```
@@ -361,8 +369,8 @@ Error:
 ## 13. ADRs (one-liners)
 
 - ADR-01: Standalone app in `gantt/`, no reuse of `plans/` or `Planify/`.
-- ADR-02: Dedicated `pm` schema in `CORP_DB`; HRIS tables untouched.
-- ADR-03: No FK to `hris_worker`; store `employee_nip` plus snapshots.
+- ADR-02: Dedicated `pm` schema in the `DB_DATABASE` database; HRIS tables (`hris_Employee`) untouched.
+- ADR-03: No FK to `hris_Employee`; store `employee_nip` plus snapshots.
 - ADR-04: Employee identity is full `NIP`, never `RIGHT(NIP,4)`.
 - ADR-05: Scheduling is server-authoritative; client never computes dates.
 - ADR-06: CPM engine is pure and deterministic; no I/O inside.

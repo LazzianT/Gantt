@@ -19,8 +19,8 @@ The workspace holds three relevant trees. Only `gantt/` is used for this project
 ## 2. HRIS source and column evidence
 
 - Application: HRIS_PORTAL.
-- Database: `CORP_DB`.
-- Primary table: `CORP_DB.dbo.hris_worker`.
+- Database: `DB_DATABASE` (`.env`; the deployment DB is `BMC`). Never hardcoded.
+- Primary table: `dbo.hris_Employee`.
 
 Confirmed columns (verbatim, do not invent others):
 
@@ -30,7 +30,7 @@ Confirmed columns (verbatim, do not invent others):
 | `Id_Employee` | int identity. Not the business key. |
 | `Name` | employee name |
 | `is_Active` | `'1'` means active |
-| `DepartID` | FK to `hris_cost_center(DepartID)` |
+| `DepartID` | FK to `MASCOSTCENTER(DepartID)` |
 | `Gender` | `'L'` / `'P'` |
 | `EmployeeStatus` | `'P'` = Permanent, anything else = Contract |
 | `MaritalStatus` | `'K'` when married (single seen in data) |
@@ -44,8 +44,8 @@ Confirmed columns (verbatim, do not invent others):
 
 Supporting tables:
 
-- `hris_cost_center(DepartID, NamaDepartemen, LevelDepartemen, Id_Division)` resolves department.
-- Position path: `hris_worker_career` (active row `is_Archive='0'`) -> `hris_job_title(Id_Jobtitle, Joblevel, Id_Category)` -> `hris_job_level` / `hris_job_category(Id_Category, CategoryName)`.
+- `MASCOSTCENTER(DepartID, NamaDepartemen, LevelDepartemen, Id_Division)` resolves department.
+- Position path: `hris_EmployeeCareerPath` (active row `is_Archive='0'`) -> `hris_Jobtitle(Id_Jobtitle, Jobtitle, Joblevel)`.
 
 Established employee search SQL (adapter basis):
 

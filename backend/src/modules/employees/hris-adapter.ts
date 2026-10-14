@@ -1,3 +1,4 @@
+import { env } from "../../config/env.js";
 import { mapRowToDTO, type EmployeeDTO, type EmployeeProvider } from "./provider.js";
 
 export type QueryFn = (sql: string, params: Record<string, unknown>) => Promise<any[]>;
@@ -12,8 +13,24 @@ const SEARCH_CACHE_TTL_MS = 30_000;
 const SEARCH_CACHE_MAX_ENTRIES = 200;
 const DEFAULT_TTL_SECONDS = 300;
 
+/** Bracket-quote a SQL Server identifier. */
+function quoteIdentifier(name: string): string {
+  return `[${name.replace(/]/g, "]]")}]`;
+}
+
 /**
- * Verbatim HRIS statements from docs/employee-integration.md. SELECT only.
+ * DB-qualified HRIS object name. The database always comes from `DB_DATABASE`
+ * (.env) via `env.db.database`, never hardcoded, so the same statements work
+ * against whatever database the deployment points at.
+ */
+export function hrisObject(name: string): string {
+  return `${quoteIdentifier(env.db.database)}.dbo.${name}`;
+}
+
+/**
+ * HRIS directory statements. SELECT only. Table/column names match the HRIS
+ * schema shipped with the deployment database (BMC): hris_Employee,
+ * MASCOSTCENTER, hris_EmployeeCareerPath, hris_Jobtitle.
  */
 export const HRIS_SQL = {
   search: `
@@ -21,8 +38,8 @@ SELECT TOP (@limit)
     a.NIP,
     RTRIM(a.Name) AS Name,
     ISNULL(m.NamaDepartemen, '-') AS Department
-FROM CORP_DB.dbo.hris_worker a
-LEFT JOIN CORP_DB.dbo.hris_cost_center m ON a.DepartID = m.DepartID
+FROM ${hrisObject("hris_Employee")} a
+LEFT JOIN ${hrisObject("MASCOSTCENTER")} m ON a.DepartID = m.DepartID
 WHERE a.is_Active = '1'
   AND (a.Name LIKE @like OR a.NIP LIKE @like)
 ORDER BY a.Name;`,
@@ -44,11 +61,11 @@ SELECT
     jt.Id_Jobtitle,
     jt.Jobtitle,
     jt.Joblevel
-FROM CORP_DB.dbo.hris_worker a
-LEFT JOIN CORP_DB.dbo.hris_cost_center m ON a.DepartID = m.DepartID
-LEFT JOIN CORP_DB.dbo.hris_worker_career cp
+FROM ${hrisObject("hris_Employee")} a
+LEFT JOIN ${hrisObject("MASCOSTCENTER")} m ON a.DepartID = m.DepartID
+LEFT JOIN ${hrisObject("hris_EmployeeCareerPath")} cp
        ON cp.NIP = a.NIP AND cp.is_Archive = '0'
-LEFT JOIN CORP_DB.dbo.hris_job_title jt ON jt.Id_Jobtitle = cp.Id_Jobtitle
+LEFT JOIN ${hrisObject("hris_Jobtitle")} jt ON jt.Id_Jobtitle = cp.Id_Jobtitle
 WHERE a.NIP = @nip
 ORDER BY jt.Joblevel DESC, jt.Id_Jobtitle DESC;`,
 
@@ -63,8 +80,8 @@ SELECT
     a.Gender,
     a.EmployeeStatus,
     CONVERT(varchar(10), a.WorkingDate, 23) AS WorkingDate
-FROM CORP_DB.dbo.hris_worker a
-LEFT JOIN CORP_DB.dbo.hris_cost_center m ON a.DepartID = m.DepartID
+FROM ${hrisObject("hris_Employee")} a
+LEFT JOIN ${hrisObject("MASCOSTCENTER")} m ON a.DepartID = m.DepartID
 WHERE a.is_Active = '1'
 ORDER BY a.Name
 OFFSET (@page - 1) * @pageSize ROWS
@@ -81,8 +98,8 @@ SELECT
     a.Gender,
     a.EmployeeStatus,
     CONVERT(varchar(10), a.WorkingDate, 23) AS WorkingDate
-FROM CORP_DB.dbo.hris_worker a
-LEFT JOIN CORP_DB.dbo.hris_cost_center m ON a.DepartID = m.DepartID
+FROM ${hrisObject("hris_Employee")} a
+LEFT JOIN ${hrisObject("MASCOSTCENTER")} m ON a.DepartID = m.DepartID
 ORDER BY a.Name
 OFFSET (@page - 1) * @pageSize ROWS
 FETCH NEXT @pageSize ROWS ONLY;`,

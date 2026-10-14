@@ -3,17 +3,15 @@ import {
   useEffect,
   useMemo,
   useRef,
-  useState,
   type PointerEvent as ReactPointerEvent,
-  type RefObject,
 } from 'react';
 import { ApiError } from '../../lib/api';
 import { shortDate } from '../../lib/format';
-import { createDependency, patchTask } from './api';
-import { ROW_HEIGHT, barBox, type Axis, type GanttRow } from './useGanttData';
+import { patchTask } from './api';
+import { barBox, type Axis, type GanttRow } from './useGanttData';
 import type { ToastKind } from '../../components/Toast';
 
-export type DragMode = 'move' | 'resize' | 'link';
+export type DragMode = 'move' | 'resize' | 'resize-start';
 
 interface DragState {
   mode: DragMode;
@@ -24,12 +22,10 @@ interface DragState {
   dx: number;
   origLeft: number;
   origWidth: number;
-  targetId: number | null;
 }
 
 interface Options {
   axis: Axis;
-  rowIndex: Map<number, number>;
   reload: () => void;
   notify: (kind: ToastKind, message: string) => void;
 }
@@ -37,20 +33,14 @@ interface Options {
 export interface GanttInteractions {
   onBarPointerDown: (event: ReactPointerEvent, row: GanttRow) => void;
   onResizePointerDown: (event: ReactPointerEvent, row: GanttRow) => void;
-  onLinkPointerDown: (event: ReactPointerEvent, row: GanttRow) => void;
-  linkTargetId: number | null;
-  linkPathRef: RefObject<SVGPathElement>;
-  linkSvgRef: RefObject<SVGSVGElement>;
+  onResizeStartPointerDown: (event: ReactPointerEvent, row: GanttRow) => void;
 }
 
 /**
- * Pointer drag/resize/link for Gantt bars. Preview is written straight to the DOM,
+ * Pointer drag/resize for Gantt bars. Preview is written straight to the DOM,
  * so no React re-render happens per pointermove; the API is called once on pointerup.
  */
-export function useGanttInteractions({ axis, rowIndex, reload, notify }: Options): GanttInteractions {
-  const [linkTargetId, setLinkTargetId] = useState<number | null>(null);
-  const linkPathRef = useRef<SVGPathElement>(null);
-  const linkSvgRef = useRef<SVGSVGElement>(null);
+export function useGanttInteractions({ axis, reload, notify }: Options): GanttInteractions {
   const reducedMotion = useRef(false);
 
   useEffect(() => {
@@ -63,11 +53,6 @@ export function useGanttInteractions({ axis, rowIndex, reload, notify }: Options
     return () => media.removeEventListener('change', apply);
   }, []);
 
-  const clearLink = useCallback(() => {
-    linkPathRef.current?.setAttribute('d', '');
-    setLinkTargetId(null);
-  }, []);
-
   const commit = useCallback(
     async (state: DragState) => {
       try {
@@ -75,7 +60,11 @@ export function useGanttInteractions({ axis, rowIndex, reload, notify }: Options
           if (Math.abs(state.dx) < 2) return;
           const iso = axis.dateForX(state.origLeft + state.dx);
           if (iso === state.row.start) return;
-          await patchTask(state.row.id, { start_date: iso });
+          // Translate the whole bar: shift start and finish by the same number of working days so
+          // the duration (and therefore the bar width) stays put.
+          const shift = axis.workingIndex(iso) - axis.workingIndex(state.row.start);
+          const finish = axis.workingDateAt(axis.workingIndex(state.row.finish) + shift);
+          await patchTask(state.row.id, { start_date: iso, finish_date: finish });
           notify('success', `${state.row.name} moved to ${shortDate(iso)}`);
           reload();
         } else if (state.mode === 'resize') {
@@ -85,13 +74,15 @@ export function useGanttInteractions({ axis, rowIndex, reload, notify }: Options
           notify('success', `${state.row.name}: ${days} day${days === 1 ? '' : 's'}`);
           reload();
         } else {
-          if (state.targetId == null) return;
-          await createDependency(state.targetId, {
-            predecessor_task_id: state.row.id,
-            dependency_type: 'FS',
-            lag_days: 0,
-          });
-          notify('success', `Linked ${state.row.name}`);
+          // Left-edge resize: keep the finish put and shift the start, so the finish date stays
+          // identical and only the started date + duration change together.
+          const startIdx = axis.workingIndex(axis.dateForX(state.origLeft + state.dx));
+          const finishIdx = axis.workingIndex(state.row.finish);
+          const days = Math.max(1, finishIdx - startIdx + 1);
+          const newStart = axis.workingDateAt(finishIdx - days + 1);
+          if (newStart === state.row.start) return;
+          await patchTask(state.row.id, { start_date: newStart, duration_days: days });
+          notify('success', `${state.row.name}: ${days} day${days === 1 ? '' : 's'}`);
           reload();
         }
       } catch (err) {
@@ -119,30 +110,9 @@ export function useGanttInteractions({ axis, rowIndex, reload, notify }: Options
         dx: 0,
         origLeft: box.left,
         origWidth: box.width,
-        targetId: null,
       };
       let frame = 0;
       let latest: PointerEvent | null = null;
-
-      const targetUnder = (clientX: number, clientY: number): number | null => {
-        const el = document.elementFromPoint(clientX, clientY)?.closest<HTMLElement>('[data-task-id]');
-        if (!el) return null;
-        const id = Number(el.dataset.taskId);
-        if (!Number.isFinite(id) || id === row.id || el.dataset.taskType === 'Summary') return null;
-        return id;
-      };
-
-      const drawLink = (clientX: number, clientY: number) => {
-        const svg = linkSvgRef.current;
-        const path = linkPathRef.current;
-        if (!svg || !path) return;
-        const rect = svg.getBoundingClientRect();
-        const x1 = box.left + box.width;
-        const y1 = (rowIndex.get(row.id) ?? 0) * ROW_HEIGHT + ROW_HEIGHT / 2;
-        const x2 = clientX - rect.left;
-        const y2 = clientY - rect.top;
-        path.setAttribute('d', `M ${x1} ${y1} H ${x1 + 8} V ${y2} H ${x2}`);
-      };
 
       const onMove = (e: PointerEvent) => {
         if (e.pointerId !== state.pointerId) return;
@@ -157,10 +127,9 @@ export function useGanttInteractions({ axis, rowIndex, reload, notify }: Options
           } else if (mode === 'resize') {
             barEl.style.width = `${Math.max(8, state.origWidth + state.dx)}px`;
           } else {
-            const id = targetUnder(latest.clientX, latest.clientY);
-            state.targetId = id;
-            setLinkTargetId((prev) => (prev === id ? prev : id));
-            drawLink(latest.clientX, latest.clientY);
+            const newWidth = Math.max(8, state.origWidth - state.dx);
+            barEl.style.left = `${state.origLeft + (state.origWidth - newWidth)}px`;
+            barEl.style.width = `${newWidth}px`;
           }
         });
       };
@@ -173,27 +142,35 @@ export function useGanttInteractions({ axis, rowIndex, reload, notify }: Options
         window.removeEventListener('pointermove', onMove);
         window.removeEventListener('pointerup', finish);
         window.removeEventListener('pointercancel', finish);
-        barEl.style.transform = '';
-        barEl.style.width = '';
+        // Only undo the preview property we mutated. `width`/`left` are owned by React
+        // (renderBar), so never blank them outright: restore the rendered value.
+        if (mode === 'move') barEl.style.transform = '';
+        else if (mode === 'resize') barEl.style.width = `${state.origWidth}px`;
+        else {
+          barEl.style.left = `${state.origLeft}px`;
+          barEl.style.width = `${state.origWidth}px`;
+        }
         barEl.style.cursor = '';
-        clearLink();
         void commit(state);
       };
 
-      barEl.style.cursor = mode === 'resize' ? 'ew-resize' : mode === 'link' ? 'crosshair' : 'grabbing';
+      barEl.style.cursor = mode === 'move' ? 'grabbing' : 'ew-resize';
       window.addEventListener('pointermove', onMove);
       window.addEventListener('pointerup', finish);
       window.addEventListener('pointercancel', finish);
     },
-    [axis, clearLink, commit, rowIndex],
+    [axis, commit],
   );
 
   const onBarPointerDown = useCallback((e: ReactPointerEvent, row: GanttRow) => begin(e, row, 'move'), [begin]);
   const onResizePointerDown = useCallback((e: ReactPointerEvent, row: GanttRow) => begin(e, row, 'resize'), [begin]);
-  const onLinkPointerDown = useCallback((e: ReactPointerEvent, row: GanttRow) => begin(e, row, 'link'), [begin]);
+  const onResizeStartPointerDown = useCallback(
+    (e: ReactPointerEvent, row: GanttRow) => begin(e, row, 'resize-start'),
+    [begin],
+  );
 
   return useMemo(
-    () => ({ onBarPointerDown, onResizePointerDown, onLinkPointerDown, linkTargetId, linkPathRef, linkSvgRef }),
-    [onBarPointerDown, onResizePointerDown, onLinkPointerDown, linkTargetId],
+    () => ({ onBarPointerDown, onResizePointerDown, onResizeStartPointerDown }),
+    [onBarPointerDown, onResizePointerDown, onResizeStartPointerDown],
   );
 }
