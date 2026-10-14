@@ -208,7 +208,11 @@ describe("HRIS SQL safety", () => {
     expect(hrisObject("hris_Employee")).toBe(`${prefix}hris_Employee`);
     for (const sql of Object.values(HRIS_SQL)) {
       expect(sql).toContain(prefix);
-      expect(sql).not.toMatch(/CORP_DB/i);
+      // The configured database is the only one referenced anywhere in the statement.
+      // Comparing qualifiers (rather than forbidding a literal name) keeps this test
+      // independent of what DB_DATABASE happens to be set to.
+      const qualifiers = new Set(sql.match(/\[[^\]]+\]\.dbo\./g) ?? []);
+      expect(qualifiers).toEqual(new Set([prefix]));
       expect(sql).not.toMatch(/hris_worker|hris_cost_center|hris_job_title/i);
     }
   });
